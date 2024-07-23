@@ -49,7 +49,11 @@ func UnaryAuth(config *config.Config) grpc.UnaryServerInterceptor {
 		}
 
 		dbDir := config.UsersDatabasesDir
-		storeFile := fmt.Sprintf("%v/%v", dbDir, hex.EncodeToString(pubkey.SerializeCompressed()))
+		pubkeyBytes := pubkey.SerializeCompressed()
+		storeFile := fmt.Sprintf("%v/%v/%v/%v", dbDir,
+			hex.EncodeToString(pubkeyBytes[0:1]),
+			hex.EncodeToString(pubkeyBytes[1:2]),
+			hex.EncodeToString(pubkeyBytes[2:]))
 		db, err := store.Connect(storeFile)
 		if err != nil {
 			log.Printf("failed to connect to database file %v: %v", storeFile, err)
