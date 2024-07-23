@@ -19,7 +19,8 @@ import (
 )
 
 const (
-	USER_DB_CONTEXT_KEY = "user_db"
+	USER_DB_CONTEXT_KEY     = "user_db"
+	USER_PUBKEY_CONTEXT_KEY = "user_pubkey"
 )
 
 var ErrInternalError = fmt.Errorf("internal error")
@@ -59,7 +60,9 @@ func UnaryAuth(config *config.Config) grpc.UnaryServerInterceptor {
 			log.Printf("failed to connect to database file %v: %v", storeFile, err)
 			return nil, ErrInternalError
 		}
-		return handler(context.WithValue(ctx, USER_DB_CONTEXT_KEY, db), req)
+		newContext := context.WithValue(ctx, USER_DB_CONTEXT_KEY, db)
+		newContext = context.WithValue(newContext, USER_PUBKEY_CONTEXT_KEY, hex.EncodeToString(pubkeyBytes))
+		return handler(newContext, req)
 	}
 }
 
