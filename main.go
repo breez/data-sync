@@ -5,7 +5,6 @@ import (
 	"net"
 
 	"github.com/breez/data-sync/config"
-	"github.com/breez/data-sync/middleware"
 	"github.com/breez/data-sync/proto"
 	"google.golang.org/grpc"
 )
@@ -20,16 +19,17 @@ func main() {
 		log.Fatalf("Failed to listen: %v", err)
 	}
 
-	s := CreateServer(config, grpcListener)
+	quitChan := make(chan struct{})
+	syncServer := NewPersistentSyncerServer(config)
+	syncServer.Start(quitChan)
+	s := CreateServer(config, grpcListener, syncServer)
 	if err := s.Serve(grpcListener); err != nil {
 		log.Fatalf("failed to serve: %v", err)
 	}
 }
 
-func CreateServer(config *config.Config, listener net.Listener) *grpc.Server {
-	s := grpc.NewServer(grpc.ChainUnaryInterceptor(middleware.UnaryAuth(config)))
-	proto.RegisterSyncerServer(s, &PersistentSyncerServer{
-		config: config,
-	})
+func CreateServer(config *config.Config, listener net.Listener, syncServer proto.SyncerServer) *grpc.Server {
+	s := grpc.NewServer()
+	proto.RegisterSyncerServer(s, syncServer)
 	return s
 }

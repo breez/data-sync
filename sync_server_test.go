@@ -28,13 +28,7 @@ type testCase struct {
 }
 
 func TestSyncService(t *testing.T) {
-	config, err := config.NewConfig()
-	if err != nil {
-		log.Fatalf("Failed to load config: %v", err)
-	}
-	privateKey, err := btcec.NewPrivateKey()
-	require.NoError(t, err, "failed to create private key")
-	os.RemoveAll(config.UsersDatabasesDir)
+	config, privateKey := testParameters(t)
 	client, closer := server(context.Background(), config)
 	defer closer()
 	defer func() {
@@ -49,6 +43,92 @@ func TestSyncService(t *testing.T) {
 			testListChanges(t, privateKey, client, listChangesRequest, testCase)
 		}
 	}
+}
+
+func TestTrackChanges(t *testing.T) {
+	config, privateKey := testParameters(t)
+	client, closer := server(context.Background(), config)
+	defer closer()
+	defer func() {
+		os.RemoveAll(config.UsersDatabasesDir)
+	}()
+
+	expectedRecords := []*proto.Record{
+		{
+			Id:      "1",
+			Version: 0,
+			Data:    []byte("version1"),
+		},
+		{
+			Id:      "2",
+			Version: 0,
+			Data:    []byte("version1"),
+		},
+	}
+	client.SetRecord(context.Background(), createSetRecordRequest(t, privateKey, expectedRecords[0]))
+	client.SetRecord(context.Background(), createSetRecordRequest(t, privateKey, expectedRecords[1]))
+
+	requestTime := time.Now().Unix()
+	toSign := fmt.Sprintf("%v-%v", 0, requestTime)
+	signature, err := middleware.SignMessage(privateKey, []byte(toSign))
+	require.NoError(t, err, "failed to sign message")
+	request := &proto.TrackChangesRequest{
+		RequestTime:  requestTime,
+		Signature:    signature,
+		SinceVersion: 0,
+	}
+	request.RequestTime = requestTime
+	request.Signature = signature
+	stream, err := client.TrackChanges(context.Background(), request)
+	require.NoError(t, err, "failed to call TrackChanges")
+
+	// check historical changes
+	var records []*proto.Record
+	for i := 0; i < 2; i++ {
+		record, err := stream.Recv()
+		require.NoError(t, err, "failed to receive record")
+		if err != nil {
+			break
+		}
+		records = append(records, record)
+		expectedRecords[i].Version = record.Version
+	}
+	res, _ := json.Marshal(records)
+	expected, _ := json.Marshal(expectedRecords)
+	require.Equal(t, string(res), string(expected), "failed to compare test results")
+
+	// check realtime changes
+	client.SetRecord(context.Background(), createSetRecordRequest(t, privateKey, &proto.Record{
+		Id:      expectedRecords[1].Id,
+		Version: expectedRecords[1].Version,
+		Data:    []byte("updated"),
+	}))
+	record, err := stream.Recv()
+	require.NoError(t, err, "failed to receive record")
+	require.Equal(t, record.Data, []byte("updated"))
+}
+
+func createSetRecordRequest(t *testing.T, privateKey *btcec.PrivateKey, record *proto.Record) *proto.SetRecordRequest {
+	requestTime := time.Now().Unix()
+	toSign := fmt.Sprintf("%v-%v-%x-%v", record.Id, record.Version, record.Data, requestTime)
+	signature, err := middleware.SignMessage(privateKey, []byte(toSign))
+	require.NoError(t, err, "failed to sign message")
+	return &proto.SetRecordRequest{
+		Record:      record,
+		RequestTime: requestTime,
+		Signature:   signature,
+	}
+}
+
+func testParameters(t *testing.T) (*config.Config, *btcec.PrivateKey) {
+	config, err := config.NewConfig()
+	if err != nil {
+		log.Fatalf("Failed to load config: %v", err)
+	}
+	privateKey, err := btcec.NewPrivateKey()
+	require.NoError(t, err, "failed to create private key")
+	os.RemoveAll(config.UsersDatabasesDir)
+	return config, privateKey
 }
 
 func testCases() []testCase {
@@ -177,7 +257,12 @@ func testListChanges(t *testing.T, privateKey *btcec.PrivateKey, client proto.Sy
 func server(ctx context.Context, config *config.Config) (proto.SyncerClient, func()) {
 	buffer := 101024 * 1024
 	lis := bufconn.Listen(buffer)
-	baseServer := CreateServer(config, lis)
+
+	quitChan := make(chan struct{})
+	syncServer := NewPersistentSyncerServer(config)
+	syncServer.Start(quitChan)
+
+	baseServer := CreateServer(config, lis, syncServer)
 	go func() {
 		if err := baseServer.Serve(lis); err != nil {
 			log.Printf("error serving server: %v", err)
@@ -198,6 +283,7 @@ func server(ctx context.Context, config *config.Config) (proto.SyncerClient, fun
 			log.Printf("error closing listener: %v", err)
 		}
 		baseServer.Stop()
+		quitChan <- struct{}{}
 	}
 
 	client := proto.NewSyncerClient(conn)

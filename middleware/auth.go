@@ -14,8 +14,6 @@ import (
 	"github.com/btcsuite/btcd/btcec/v2/ecdsa"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/tv42/zbase32"
-
-	"google.golang.org/grpc"
 )
 
 const (
@@ -27,43 +25,46 @@ var ErrInternalError = fmt.Errorf("internal error")
 var ErrInvalidSignature = fmt.Errorf("invalid signature")
 var SignedMsgPrefix = []byte("Lightning Signed Message:")
 
-func UnaryAuth(config *config.Config) grpc.UnaryServerInterceptor {
-	return func(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
-
-		var toVerify string
-		var signature string
-		setRecordReq, ok := req.(*proto.SetRecordRequest)
-		if ok {
-			toVerify = fmt.Sprintf("%v-%v-%x-%v", setRecordReq.Record.Id, setRecordReq.Record.Version, setRecordReq.Record.Data, setRecordReq.RequestTime)
-			signature = setRecordReq.Signature
-		}
-
-		listChangesReq, ok := req.(*proto.ListChangesRequest)
-		if ok {
-			toVerify = fmt.Sprintf("%v-%v", listChangesReq.SinceVersion, listChangesReq.RequestTime)
-			signature = listChangesReq.Signature
-		}
-
-		pubkey, err := VerifyMessage([]byte(toVerify), signature)
-		if err != nil {
-			return nil, err
-		}
-
-		dbDir := config.UsersDatabasesDir
-		pubkeyBytes := pubkey.SerializeCompressed()
-		storeFile := fmt.Sprintf("%v/%v/%v/%v", dbDir,
-			hex.EncodeToString(pubkeyBytes[0:1]),
-			hex.EncodeToString(pubkeyBytes[1:2]),
-			hex.EncodeToString(pubkeyBytes[2:]))
-		db, err := store.Connect(storeFile)
-		if err != nil {
-			log.Printf("failed to connect to database file %v: %v", storeFile, err)
-			return nil, ErrInternalError
-		}
-		newContext := context.WithValue(ctx, USER_DB_CONTEXT_KEY, db)
-		newContext = context.WithValue(newContext, USER_PUBKEY_CONTEXT_KEY, hex.EncodeToString(pubkeyBytes))
-		return handler(newContext, req)
+func Authenticate(config *config.Config, ctx context.Context, req interface{}) (context.Context, error) {
+	var toVerify string
+	var signature string
+	setRecordReq, ok := req.(*proto.SetRecordRequest)
+	if ok {
+		toVerify = fmt.Sprintf("%v-%v-%x-%v", setRecordReq.Record.Id, setRecordReq.Record.Version, setRecordReq.Record.Data, setRecordReq.RequestTime)
+		signature = setRecordReq.Signature
 	}
+
+	listChangesReq, ok := req.(*proto.ListChangesRequest)
+	if ok {
+		toVerify = fmt.Sprintf("%v-%v", listChangesReq.SinceVersion, listChangesReq.RequestTime)
+		signature = listChangesReq.Signature
+	}
+
+	trackChangesReq, ok := req.(*proto.TrackChangesRequest)
+	if ok {
+		toVerify = fmt.Sprintf("%v-%v", trackChangesReq.SinceVersion, trackChangesReq.RequestTime)
+		signature = trackChangesReq.Signature
+	}
+
+	pubkey, err := VerifyMessage([]byte(toVerify), signature)
+	if err != nil {
+		return nil, err
+	}
+
+	dbDir := config.UsersDatabasesDir
+	pubkeyBytes := pubkey.SerializeCompressed()
+	storeFile := fmt.Sprintf("%v/%v/%v/%v", dbDir,
+		hex.EncodeToString(pubkeyBytes[0:1]),
+		hex.EncodeToString(pubkeyBytes[1:2]),
+		hex.EncodeToString(pubkeyBytes[2:]))
+	db, err := store.Connect(storeFile)
+	if err != nil {
+		log.Printf("failed to connect to database file %v: %v", storeFile, err)
+		return nil, ErrInternalError
+	}
+	newContext := context.WithValue(ctx, USER_DB_CONTEXT_KEY, db)
+	newContext = context.WithValue(newContext, USER_PUBKEY_CONTEXT_KEY, hex.EncodeToString(pubkeyBytes))
+	return newContext, nil
 }
 
 func SignMessage(key *btcec.PrivateKey, msg []byte) (string, error) {

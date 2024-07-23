@@ -33,7 +33,11 @@ func (s *PersistentSyncerServer) Start(quitChan chan struct{}) {
 	s.eventsManager.start(quitChan)
 }
 
-func (s *PersistentSyncerServer) SetRecord(c context.Context, msg *proto.SetRecordRequest) (*proto.SetRecordReply, error) {
+func (s *PersistentSyncerServer) SetRecord(ctx context.Context, msg *proto.SetRecordRequest) (*proto.SetRecordReply, error) {
+	c, err := middleware.Authenticate(s.config, ctx, msg)
+	if err != nil {
+		return nil, err
+	}
 	newVersion, err := c.Value(middleware.USER_DB_CONTEXT_KEY).(*store.SQLiteSyncStorage).SetRecord(c, msg.Record.Id, msg.Record.Data, msg.Record.Version)
 	if err != nil {
 		if err == store.ErrSetConflict {
@@ -50,7 +54,11 @@ func (s *PersistentSyncerServer) SetRecord(c context.Context, msg *proto.SetReco
 	}, nil
 }
 
-func (s *PersistentSyncerServer) ListChanges(c context.Context, msg *proto.ListChangesRequest) (*proto.ListChangesReply, error) {
+func (s *PersistentSyncerServer) ListChanges(ctx context.Context, msg *proto.ListChangesRequest) (*proto.ListChangesReply, error) {
+	c, err := middleware.Authenticate(s.config, ctx, msg)
+	if err != nil {
+		return nil, err
+	}
 	changed, err := c.Value(middleware.USER_DB_CONTEXT_KEY).(*store.SQLiteSyncStorage).ListChanges(c, msg.SinceVersion)
 	if err != nil {
 		return nil, err
@@ -69,7 +77,26 @@ func (s *PersistentSyncerServer) ListChanges(c context.Context, msg *proto.ListC
 }
 
 func (s *PersistentSyncerServer) TrackChanges(request *proto.TrackChangesRequest, stream proto.Syncer_TrackChangesServer) error {
-	context := stream.Context()
+	context, err := middleware.Authenticate(s.config, stream.Context(), request)
+	if err != nil {
+		return err
+	}
+
+	historyChanges, err := context.Value(middleware.USER_DB_CONTEXT_KEY).(*store.SQLiteSyncStorage).ListChanges(context, request.SinceVersion)
+	if err != nil {
+		return err
+	}
+	for _, r := range historyChanges {
+		record := &proto.Record{
+			Id:      r.RecordID,
+			Data:    r.Data,
+			Version: r.Version,
+		}
+		if err := stream.Send(record); err != nil {
+			return err
+		}
+	}
+
 	pubkey := context.Value(middleware.USER_PUBKEY_CONTEXT_KEY).(string)
 	subscription := s.eventsManager.subscribe(pubkey)
 	defer s.eventsManager.unsubscribe(pubkey, subscription.id)
@@ -124,35 +151,37 @@ func newEventsManager() *eventsManager {
 }
 
 func (c *eventsManager) start(quitChan chan struct{}) {
-	for {
-		select {
-		case msg := <-c.msgChan:
-			if s, ok := msg.(*subscription); ok {
-				c.streams[s.pubkey] = append(c.streams[s.pubkey], s)
-			}
-			if s, ok := msg.(*unsubscribe); ok {
-				var newSubs []*subscription
-				for _, sub := range c.streams[s.pubkey] {
-					if sub.id != s.id {
-						newSubs = append(newSubs, sub)
+	go func() {
+		for {
+			select {
+			case msg := <-c.msgChan:
+				if s, ok := msg.(*subscription); ok {
+					c.streams[s.pubkey] = append(c.streams[s.pubkey], s)
+				}
+				if s, ok := msg.(*unsubscribe); ok {
+					var newSubs []*subscription
+					for _, sub := range c.streams[s.pubkey] {
+						if sub.id != s.id {
+							newSubs = append(newSubs, sub)
+						}
+						close(sub.eventsChan)
 					}
-					close(sub.eventsChan)
+					delete(c.streams, s.pubkey)
+					if len(newSubs) > 0 {
+						c.streams[s.pubkey] = newSubs
+					}
 				}
-				delete(c.streams, s.pubkey)
-				if len(newSubs) > 0 {
-					c.streams[s.pubkey] = newSubs
+				if s, ok := msg.(*notifyChange); ok {
+					for _, sub := range c.streams[s.pubkey] {
+						sub.eventsChan <- &changeRecordEvent{pubkey: s.pubkey, record: s.record}
+					}
 				}
-			}
-			if s, ok := msg.(*notifyChange); ok {
-				for _, sub := range c.streams[s.pubkey] {
-					sub.eventsChan <- &changeRecordEvent{pubkey: s.pubkey, record: s.record}
-				}
-			}
 
-		case <-quitChan:
-			return
+			case <-quitChan:
+				return
+			}
 		}
-	}
+	}()
 }
 
 func (c *eventsManager) notifyChange(pubkey string, record *proto.Record) {
