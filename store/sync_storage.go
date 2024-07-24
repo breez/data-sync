@@ -17,6 +17,7 @@ import (
 	_ "github.com/mattn/go-sqlite3"
 )
 
+var _ = pkger.Include("/store/migrations")
 var ErrSetConflict = errors.New("set conflict")
 
 type StoredRecord struct {
@@ -37,6 +38,10 @@ func Connect(file string) (*SQLiteSyncStorage, error) {
 	if err := os.MkdirAll(path.Dir(file), 0700); err != nil {
 		return nil, fmt.Errorf("failed to create databases directory %w", err)
 	}
+	needMigration := false
+	if _, err := os.Stat(file); errors.Is(err, os.ErrNotExist) {
+		needMigration = true
+	}
 	db, err := sql.Open("sqlite3", file)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open sqlite3 database %w", err)
@@ -47,16 +52,16 @@ func Connect(file string) (*SQLiteSyncStorage, error) {
 		return nil, fmt.Errorf("failed to create migration driver %w", err)
 	}
 
-	_ = pkger.Include("/store/migrations")
 	m, err := migrate.NewWithDatabaseInstance(
 		"pkger:///store/migrations",
 		file, driver)
 	if err != nil {
 		return nil, fmt.Errorf("failed to instantiate migrations %w", err)
 	}
-	if err := m.Up(); err != nil && err != migrate.ErrNoChange {
-		return nil, fmt.Errorf("failed to run migrations %w", err)
-
+	if needMigration {
+		if err := m.Up(); err != nil && err != migrate.ErrNoChange {
+			return nil, fmt.Errorf("failed to run migrations %w", err)
+		}
 	}
 	return &SQLiteSyncStorage{db: db}, nil
 }
