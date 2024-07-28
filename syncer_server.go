@@ -47,7 +47,9 @@ func (s *PersistentSyncerServer) SetRecord(ctx context.Context, msg *proto.SetRe
 		}
 		return nil, err
 	}
-	s.eventsManager.notifyChange(c.Value(middleware.USER_PUBKEY_CONTEXT_KEY).(string), msg.Record)
+	newRecord := msg.Record
+	newRecord.Version = newVersion
+	s.eventsManager.notifyChange(c.Value(middleware.USER_PUBKEY_CONTEXT_KEY).(string), newRecord)
 	return &proto.SetRecordReply{
 		Status:     proto.SetRecordStatus_SUCCESS,
 		NewVersion: newVersion,

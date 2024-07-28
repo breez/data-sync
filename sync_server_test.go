@@ -91,6 +91,7 @@ func TestTrackChanges(t *testing.T) {
 			break
 		}
 		records = append(records, record)
+		require.NotEqual(t, expectedRecords[i].Version, record.Version)
 		expectedRecords[i].Version = record.Version
 	}
 	res, _ := json.Marshal(records)
