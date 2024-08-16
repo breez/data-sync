@@ -24,6 +24,7 @@ const _ = grpc.SupportPackageIsVersion7
 type SyncerClient interface {
 	SetRecord(ctx context.Context, in *SetRecordRequest, opts ...grpc.CallOption) (*SetRecordReply, error)
 	ListChanges(ctx context.Context, in *ListChangesRequest, opts ...grpc.CallOption) (*ListChangesReply, error)
+	TrackChanges(ctx context.Context, in *TrackChangesRequest, opts ...grpc.CallOption) (Syncer_TrackChangesClient, error)
 }
 
 type syncerClient struct {
@@ -52,12 +53,45 @@ func (c *syncerClient) ListChanges(ctx context.Context, in *ListChangesRequest, 
 	return out, nil
 }
 
+func (c *syncerClient) TrackChanges(ctx context.Context, in *TrackChangesRequest, opts ...grpc.CallOption) (Syncer_TrackChangesClient, error) {
+	stream, err := c.cc.NewStream(ctx, &Syncer_ServiceDesc.Streams[0], "/proto.Syncer/TrackChanges", opts...)
+	if err != nil {
+		return nil, err
+	}
+	x := &syncerTrackChangesClient{stream}
+	if err := x.ClientStream.SendMsg(in); err != nil {
+		return nil, err
+	}
+	if err := x.ClientStream.CloseSend(); err != nil {
+		return nil, err
+	}
+	return x, nil
+}
+
+type Syncer_TrackChangesClient interface {
+	Recv() (*Record, error)
+	grpc.ClientStream
+}
+
+type syncerTrackChangesClient struct {
+	grpc.ClientStream
+}
+
+func (x *syncerTrackChangesClient) Recv() (*Record, error) {
+	m := new(Record)
+	if err := x.ClientStream.RecvMsg(m); err != nil {
+		return nil, err
+	}
+	return m, nil
+}
+
 // SyncerServer is the server API for Syncer service.
 // All implementations must embed UnimplementedSyncerServer
 // for forward compatibility
 type SyncerServer interface {
 	SetRecord(context.Context, *SetRecordRequest) (*SetRecordReply, error)
 	ListChanges(context.Context, *ListChangesRequest) (*ListChangesReply, error)
+	TrackChanges(*TrackChangesRequest, Syncer_TrackChangesServer) error
 	mustEmbedUnimplementedSyncerServer()
 }
 
@@ -70,6 +104,9 @@ func (UnimplementedSyncerServer) SetRecord(context.Context, *SetRecordRequest) (
 }
 func (UnimplementedSyncerServer) ListChanges(context.Context, *ListChangesRequest) (*ListChangesReply, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ListChanges not implemented")
+}
+func (UnimplementedSyncerServer) TrackChanges(*TrackChangesRequest, Syncer_TrackChangesServer) error {
+	return status.Errorf(codes.Unimplemented, "method TrackChanges not implemented")
 }
 func (UnimplementedSyncerServer) mustEmbedUnimplementedSyncerServer() {}
 
@@ -120,6 +157,27 @@ func _Syncer_ListChanges_Handler(srv interface{}, ctx context.Context, dec func(
 	return interceptor(ctx, in, info, handler)
 }
 
+func _Syncer_TrackChanges_Handler(srv interface{}, stream grpc.ServerStream) error {
+	m := new(TrackChangesRequest)
+	if err := stream.RecvMsg(m); err != nil {
+		return err
+	}
+	return srv.(SyncerServer).TrackChanges(m, &syncerTrackChangesServer{stream})
+}
+
+type Syncer_TrackChangesServer interface {
+	Send(*Record) error
+	grpc.ServerStream
+}
+
+type syncerTrackChangesServer struct {
+	grpc.ServerStream
+}
+
+func (x *syncerTrackChangesServer) Send(m *Record) error {
+	return x.ServerStream.SendMsg(m)
+}
+
 // Syncer_ServiceDesc is the grpc.ServiceDesc for Syncer service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -136,6 +194,12 @@ var Syncer_ServiceDesc = grpc.ServiceDesc{
 			Handler:    _Syncer_ListChanges_Handler,
 		},
 	},
-	Streams:  []grpc.StreamDesc{},
+	Streams: []grpc.StreamDesc{
+		{
+			StreamName:    "TrackChanges",
+			Handler:       _Syncer_TrackChanges_Handler,
+			ServerStreams: true,
+		},
+	},
 	Metadata: "sync.proto",
 }
