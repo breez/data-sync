@@ -39,7 +39,7 @@ func UnaryAuth(config *config.Config) grpc.UnaryServerInterceptor {
 
 		listChangesReq, ok := req.(*proto.ListChangesRequest)
 		if ok {
-			toVerify = fmt.Sprintf("%v-%v", listChangesReq.SinceVersion, listChangesReq.RequestTime)
+			toVerify = fmt.Sprintf("%v-%v", listChangesReq.FromId, listChangesReq.RequestTime)
 			signature = listChangesReq.Signature
 		}
 
@@ -66,10 +66,7 @@ func UnaryAuth(config *config.Config) grpc.UnaryServerInterceptor {
 func SignMessage(key *btcec.PrivateKey, msg []byte) (string, error) {
 	message := append(SignedMsgPrefix, msg...)
 	digest := chainhash.DoubleHashB(message)
-	signture, err := ecdsa.SignCompact(key, digest, true)
-	if err != nil {
-		return "", fmt.Errorf("failed to sign message: %v", err)
-	}
+	signture := ecdsa.SignCompact(key, digest, true)
 	sig := zbase32.EncodeToString(signture)
 	return sig, nil
 }

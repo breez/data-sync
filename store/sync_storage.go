@@ -20,13 +20,13 @@ import (
 var ErrSetConflict = errors.New("set conflict")
 
 type StoredRecord struct {
-	RecordID string
-	Version  int64
-	Data     []byte
+	Id      int64
+	Version float32
+	Data    []byte
 }
 type SyncStorage interface {
-	SetRecord(ctx context.Context, id string, existingVersion int64, data []byte) error
-	ListChanges(ctx context.Context, id string, sinceVersion int64) ([]StoredRecord, error)
+	SetRecord(ctx context.Context, userRecordId int64, version float32, data []byte) (int64, error)
+	ListChanges(ctx context.Context, fromId int64) ([]StoredRecord, error)
 }
 
 type SQLiteSyncStorage struct {
@@ -61,37 +61,46 @@ func Connect(file string) (*SQLiteSyncStorage, error) {
 	return &SQLiteSyncStorage{db: db}, nil
 }
 
-func (s *SQLiteSyncStorage) SetRecord(ctx context.Context, recordID string, data []byte, existingVersion int64) (int64, error) {
-	var version int64
-	err := s.db.QueryRow("SELECT version FROM RECORDS WHERE record_id = ?", recordID).Scan(&version)
+func (s *SQLiteSyncStorage) SetRecord(ctx context.Context, userRecordId int64, version float32, data []byte) (int64, error) {
+	var latestRecordId int64
+	err := s.db.QueryRow(`
+		SELECT id 
+		FROM RECORDS 
+		ORDER BY id DESC
+		LIMIT 1
+	`).Scan(&latestRecordId)
 	if err != sql.ErrNoRows {
 		if err != nil {
 			return 0, fmt.Errorf("failed to currenet version %w", err)
 		}
-		if existingVersion != version {
+		if latestRecordId+1 != userRecordId {
 			return 0, ErrSetConflict
 		}
 	}
 
-	res, err := s.db.Exec("INSERT OR REPLACE INTO RECORDS (record_id, data) VALUES (?, ?)", recordID, data)
+	res, err := s.db.Exec("INSERT INTO RECORDS (version, data) VALUES (?, ?)", version, data)
 	if err != nil {
-		return 0, fmt.Errorf("failed to insert %w", err)
+		return 0, fmt.Errorf("failed to insert record: %w", err)
 
 	}
 	return res.LastInsertId()
 }
 
-func (s *SQLiteSyncStorage) ListChanges(ctx context.Context, sinceVersion int64) ([]StoredRecord, error) {
-	rows, err := s.db.Query("SELECT record_id, data, version FROM RECORDS WHERE version > ?", sinceVersion)
+func (s *SQLiteSyncStorage) ListChanges(ctx context.Context, fromId int64) ([]StoredRecord, error) {
+	rows, err := s.db.Query(`
+		SELECT id, version, data 
+		FROM RECORDS 
+		WHERE id >= ? 
+	`, fromId)
 	if err != nil {
-		return nil, fmt.Errorf("failed to query %w", err)
+		return nil, fmt.Errorf("failed to retrieve changes: %w", err)
 	}
 	defer rows.Close()
 
 	records := make([]StoredRecord, 0)
 	for rows.Next() {
 		record := StoredRecord{}
-		err = rows.Scan(&record.RecordID, &record.Data, &record.Version)
+		err = rows.Scan(&record.Id, &record.Version, &record.Data)
 		if err != nil {
 			return nil, fmt.Errorf("failed to scan %w", err)
 		}
