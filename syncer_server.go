@@ -15,7 +15,12 @@ type PersistentSyncerServer struct {
 }
 
 func (s *PersistentSyncerServer) SetRecord(c context.Context, msg *proto.SetRecordRequest) (*proto.SetRecordReply, error) {
-	newVersion, err := c.Value(middleware.USER_DB_CONTEXT_KEY).(*store.SQLiteSyncStorage).SetRecord(c, msg.Record.Id, msg.Record.Data, msg.Record.Version)
+	newId, err := c.Value(middleware.USER_DB_CONTEXT_KEY).(*store.SQLiteSyncStorage).SetRecord(
+		c,
+		msg.Record.Id,
+		msg.Record.Version,
+		msg.Record.Data,
+	)
 	if err != nil {
 		if err == store.ErrSetConflict {
 			return &proto.SetRecordReply{
@@ -25,22 +30,22 @@ func (s *PersistentSyncerServer) SetRecord(c context.Context, msg *proto.SetReco
 		return nil, err
 	}
 	return &proto.SetRecordReply{
-		Status:     proto.SetRecordStatus_SUCCESS,
-		NewVersion: newVersion,
+		Status: proto.SetRecordStatus_SUCCESS,
+		NewId:  newId,
 	}, nil
 }
 
 func (s *PersistentSyncerServer) ListChanges(c context.Context, msg *proto.ListChangesRequest) (*proto.ListChangesReply, error) {
-	changed, err := c.Value(middleware.USER_DB_CONTEXT_KEY).(*store.SQLiteSyncStorage).ListChanges(c, msg.SinceVersion)
+	changed, err := c.Value(middleware.USER_DB_CONTEXT_KEY).(*store.SQLiteSyncStorage).ListChanges(c, msg.FromId)
 	if err != nil {
 		return nil, err
 	}
 	records := make([]*proto.Record, len(changed))
 	for i, r := range changed {
 		records[i] = &proto.Record{
-			Id:      r.RecordID,
-			Data:    r.Data,
+			Id:      r.Id,
 			Version: r.Version,
+			Data:    r.Data,
 		}
 	}
 	return &proto.ListChangesReply{

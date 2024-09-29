@@ -32,6 +32,7 @@ func TestSyncService(t *testing.T) {
 	if err != nil {
 		log.Fatalf("Failed to load config: %v", err)
 	}
+	os.Create(config.UsersDatabasesDir)
 	privateKey, err := btcec.NewPrivateKey()
 	require.NoError(t, err, "failed to create private key")
 	os.RemoveAll(config.UsersDatabasesDir)
@@ -58,7 +59,7 @@ func testCases() []testCase {
 		{
 			name: "empty db, no changes",
 			request: &proto.ListChangesRequest{
-				SinceVersion: 0,
+				FromId: 0,
 			},
 			reply: &proto.ListChangesReply{
 				Changes: []*proto.Record{},
@@ -67,33 +68,33 @@ func testCases() []testCase {
 
 		// set first record
 		{
-			name: "initial record insert",
+			name: "first record insert",
 			request: &proto.SetRecordRequest{
 				Record: &proto.Record{
-					Id:      "1",
-					Version: 0,
-					Data:    []byte("version1"),
+					Id:      1,
+					Version: 0.1,
+					Data:    []byte("{}"),
 				},
 			},
 			reply: &proto.SetRecordReply{
-				Status:     proto.SetRecordStatus_SUCCESS,
-				NewVersion: 1,
+				Status: proto.SetRecordStatus_SUCCESS,
+				NewId:  1,
 			},
 		},
 
-		// update record
+		// set second record
 		{
-			name: "initial record update",
+			name: "second record insert",
 			request: &proto.SetRecordRequest{
 				Record: &proto.Record{
-					Id:      "1",
-					Version: 1,
-					Data:    []byte("version2"),
+					Id:      2,
+					Version: 0.1,
+					Data:    []byte("{}"),
 				},
 			},
 			reply: &proto.SetRecordReply{
-				Status:     proto.SetRecordStatus_SUCCESS,
-				NewVersion: 2,
+				Status: proto.SetRecordStatus_SUCCESS,
+				NewId:  2,
 			},
 		},
 
@@ -102,9 +103,9 @@ func testCases() []testCase {
 			name: "test conflict",
 			request: &proto.SetRecordRequest{
 				Record: &proto.Record{
-					Id:      "1",
-					Version: 1,
-					Data:    []byte("version3"),
+					Id:      1,
+					Version: 0.1,
+					Data:    []byte("{}"),
 				},
 			},
 			reply: &proto.SetRecordReply{
@@ -112,29 +113,18 @@ func testCases() []testCase {
 			},
 		},
 
-		// no changes since version 5
-		{
-			name: "empty changes",
-			request: &proto.ListChangesRequest{
-				SinceVersion: 5,
-			},
-			reply: &proto.ListChangesReply{
-				Changes: []*proto.Record{},
-			},
-		},
-
 		// 1 record changes
 		{
 			name: "list changes returns 1 record",
 			request: &proto.ListChangesRequest{
-				SinceVersion: 0,
+				FromId: 2,
 			},
 			reply: &proto.ListChangesReply{
 				Changes: []*proto.Record{
 					{
-						Id:      "1",
-						Version: 2,
-						Data:    []byte("version2"),
+						Id:      2,
+						Version: 0.1,
+						Data:    []byte("{}"),
 					},
 				},
 			},
@@ -147,7 +137,7 @@ func testSetRecord(t *testing.T, privateKey *btcec.PrivateKey, client proto.Sync
 	toSign := fmt.Sprintf("%v-%v-%x-%v", request.Record.Id, request.Record.Version, request.Record.Data, requestTime)
 	signature, err := middleware.SignMessage(privateKey, []byte(toSign))
 	require.NoError(t, err, "failed to sign message")
-	request.RequestTime = requestTime
+	request.RequestTime = uint32(requestTime)
 	request.Signature = signature
 	response, err := client.SetRecord(context.Background(), request)
 	require.NoError(t, err, "failed to call SetRecord")
@@ -160,10 +150,10 @@ func testSetRecord(t *testing.T, privateKey *btcec.PrivateKey, client proto.Sync
 
 func testListChanges(t *testing.T, privateKey *btcec.PrivateKey, client proto.SyncerClient, request *proto.ListChangesRequest, test testCase) {
 	requestTime := time.Now().Unix()
-	toSign := fmt.Sprintf("%v-%v", request.SinceVersion, requestTime)
+	toSign := fmt.Sprintf("%v-%v", request.FromId, requestTime)
 	signature, err := middleware.SignMessage(privateKey, []byte(toSign))
 	require.NoError(t, err, "failed to sign message")
-	request.RequestTime = requestTime
+	request.RequestTime = uint32(requestTime)
 	request.Signature = signature
 	response, err := client.ListChanges(context.Background(), request)
 	require.NoError(t, err, "failed to call ListChanges")
