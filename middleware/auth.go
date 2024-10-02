@@ -43,6 +43,12 @@ func UnaryAuth(config *config.Config) grpc.UnaryServerInterceptor {
 			signature = listChangesReq.Signature
 		}
 
+		listenChangesReq, ok := req.(*proto.ListenChangesRequest)
+		if ok {
+			toVerify = fmt.Sprintf("%v", listChangesReq.RequestTime)
+			signature = listenChangesReq.Signature
+		}
+
 		pubkey, err := VerifyMessage([]byte(toVerify), signature)
 		if err != nil {
 			return nil, err
