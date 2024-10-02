@@ -14,6 +14,8 @@ type PersistentSyncerServer struct {
 	config *config.Config
 }
 
+var recordsChannel = make(chan *proto.Record)
+
 func (s *PersistentSyncerServer) SetRecord(c context.Context, msg *proto.SetRecordRequest) (*proto.SetRecordReply, error) {
 	newId, err := c.Value(middleware.USER_DB_CONTEXT_KEY).(*store.SQLiteSyncStorage).SetRecord(
 		c,
@@ -29,6 +31,7 @@ func (s *PersistentSyncerServer) SetRecord(c context.Context, msg *proto.SetReco
 		}
 		return nil, err
 	}
+	recordsChannel <- msg.Record
 	return &proto.SetRecordReply{
 		Status: proto.SetRecordStatus_SUCCESS,
 		NewId:  newId,
@@ -51,4 +54,11 @@ func (s *PersistentSyncerServer) ListChanges(c context.Context, msg *proto.ListC
 	return &proto.ListChangesReply{
 		Changes: records,
 	}, nil
+}
+
+func (s *PersistentSyncerServer) ListenChanges(msg *proto.ListenChangesRequest, srv proto.Syncer_ListenChangesServer) error {
+	for record := range recordsChannel {
+		srv.Send(record)
+	}
+	return nil
 }

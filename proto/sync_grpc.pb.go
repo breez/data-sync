@@ -19,8 +19,9 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	Syncer_SetRecord_FullMethodName   = "/sync.Syncer/SetRecord"
-	Syncer_ListChanges_FullMethodName = "/sync.Syncer/ListChanges"
+	Syncer_SetRecord_FullMethodName     = "/sync.Syncer/SetRecord"
+	Syncer_ListChanges_FullMethodName   = "/sync.Syncer/ListChanges"
+	Syncer_ListenChanges_FullMethodName = "/sync.Syncer/ListenChanges"
 )
 
 // SyncerClient is the client API for Syncer service.
@@ -29,6 +30,7 @@ const (
 type SyncerClient interface {
 	SetRecord(ctx context.Context, in *SetRecordRequest, opts ...grpc.CallOption) (*SetRecordReply, error)
 	ListChanges(ctx context.Context, in *ListChangesRequest, opts ...grpc.CallOption) (*ListChangesReply, error)
+	ListenChanges(ctx context.Context, in *ListenChangesRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[Record], error)
 }
 
 type syncerClient struct {
@@ -59,12 +61,32 @@ func (c *syncerClient) ListChanges(ctx context.Context, in *ListChangesRequest, 
 	return out, nil
 }
 
+func (c *syncerClient) ListenChanges(ctx context.Context, in *ListenChangesRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[Record], error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	stream, err := c.cc.NewStream(ctx, &Syncer_ServiceDesc.Streams[0], Syncer_ListenChanges_FullMethodName, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	x := &grpc.GenericClientStream[ListenChangesRequest, Record]{ClientStream: stream}
+	if err := x.ClientStream.SendMsg(in); err != nil {
+		return nil, err
+	}
+	if err := x.ClientStream.CloseSend(); err != nil {
+		return nil, err
+	}
+	return x, nil
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type Syncer_ListenChangesClient = grpc.ServerStreamingClient[Record]
+
 // SyncerServer is the server API for Syncer service.
 // All implementations must embed UnimplementedSyncerServer
 // for forward compatibility.
 type SyncerServer interface {
 	SetRecord(context.Context, *SetRecordRequest) (*SetRecordReply, error)
 	ListChanges(context.Context, *ListChangesRequest) (*ListChangesReply, error)
+	ListenChanges(*ListenChangesRequest, grpc.ServerStreamingServer[Record]) error
 	mustEmbedUnimplementedSyncerServer()
 }
 
@@ -80,6 +102,9 @@ func (UnimplementedSyncerServer) SetRecord(context.Context, *SetRecordRequest) (
 }
 func (UnimplementedSyncerServer) ListChanges(context.Context, *ListChangesRequest) (*ListChangesReply, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ListChanges not implemented")
+}
+func (UnimplementedSyncerServer) ListenChanges(*ListenChangesRequest, grpc.ServerStreamingServer[Record]) error {
+	return status.Errorf(codes.Unimplemented, "method ListenChanges not implemented")
 }
 func (UnimplementedSyncerServer) mustEmbedUnimplementedSyncerServer() {}
 func (UnimplementedSyncerServer) testEmbeddedByValue()                {}
@@ -138,6 +163,17 @@ func _Syncer_ListChanges_Handler(srv interface{}, ctx context.Context, dec func(
 	return interceptor(ctx, in, info, handler)
 }
 
+func _Syncer_ListenChanges_Handler(srv interface{}, stream grpc.ServerStream) error {
+	m := new(ListenChangesRequest)
+	if err := stream.RecvMsg(m); err != nil {
+		return err
+	}
+	return srv.(SyncerServer).ListenChanges(m, &grpc.GenericServerStream[ListenChangesRequest, Record]{ServerStream: stream})
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type Syncer_ListenChangesServer = grpc.ServerStreamingServer[Record]
+
 // Syncer_ServiceDesc is the grpc.ServiceDesc for Syncer service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -154,6 +190,12 @@ var Syncer_ServiceDesc = grpc.ServiceDesc{
 			Handler:    _Syncer_ListChanges_Handler,
 		},
 	},
-	Streams:  []grpc.StreamDesc{},
+	Streams: []grpc.StreamDesc{
+		{
+			StreamName:    "ListenChanges",
+			Handler:       _Syncer_ListenChanges_Handler,
+			ServerStreams: true,
+		},
+	},
 	Metadata: "sync.proto",
 }
