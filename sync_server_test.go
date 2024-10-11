@@ -35,7 +35,14 @@ func TestSyncService(t *testing.T) {
 	privateKey, err := btcec.NewPrivateKey()
 	require.NoError(t, err, "failed to create private key")
 	os.RemoveAll(config.UsersDatabasesDir)
-	client, closer := server(context.Background(), config)
+
+	buffer := 101024 * 1024
+	lis := bufconn.Listen(buffer)
+	closer := newServer(lis, config)
+	client := newClient(context.Background(), lis)
+
+	changes_stream := listenChanges(t, privateKey, client)
+
 	defer closer()
 	defer func() {
 		os.RemoveAll(config.UsersDatabasesDir)
@@ -44,6 +51,21 @@ func TestSyncService(t *testing.T) {
 	for _, testCase := range testCases() {
 		if setRecordRequest, ok := testCase.request.(*proto.SetRecordRequest); ok {
 			testSetRecord(t, privateKey, client, setRecordRequest, testCase)
+
+			if testCase.reply.(*proto.SetRecordReply).Status != proto.SetRecordStatus_SUCCESS {
+				continue
+			}
+
+			record, err := changes_stream.Recv()
+			require.NoError(t, err, "failed to receive record")
+
+			received_json, err := json.Marshal(record)
+			require.NoError(t, err, "failed to serialize received record")
+
+			expected_json, err := json.Marshal(testCase.request.(*proto.SetRecordRequest).Record)
+			require.NoError(t, err, "failed to serialize expected record")
+
+			require.Equal(t, received_json, expected_json)
 		}
 		if listChangesRequest, ok := testCase.request.(*proto.ListChangesRequest); ok {
 			testListChanges(t, privateKey, client, listChangesRequest, testCase)
@@ -142,6 +164,20 @@ func testCases() []testCase {
 	}
 }
 
+func listenChanges(t *testing.T, privateKey *btcec.PrivateKey, client proto.SyncerClient) grpc.ServerStreamingClient[proto.Record] {
+	requestTime := time.Now().Unix()
+	toSign := fmt.Sprintf("%v", requestTime)
+	signature, err := middleware.SignMessage(privateKey, []byte(toSign))
+	require.NoError(t, err, "failed to sign message")
+	request := proto.ListenChangesRequest{
+		RequestTime: uint32(requestTime),
+		Signature:   signature,
+	}
+	stream, err := client.ListenChanges(context.Background(), &request)
+	require.NoError(t, err, "failed to call ListenChanges")
+	return stream
+}
+
 func testSetRecord(t *testing.T, privateKey *btcec.PrivateKey, client proto.SyncerClient, request *proto.SetRecordRequest, test testCase) {
 	requestTime := time.Now().Unix()
 	toSign := fmt.Sprintf("%v-%v-%x-%v", request.Record.Id, request.Record.Version, request.Record.Data, requestTime)
@@ -174,16 +210,7 @@ func testListChanges(t *testing.T, privateKey *btcec.PrivateKey, client proto.Sy
 	require.Equal(t, res, expected, fmt.Sprintf("failed to compare test results for %v", test.name))
 }
 
-func server(ctx context.Context, config *config.Config) (proto.SyncerClient, func()) {
-	buffer := 101024 * 1024
-	lis := bufconn.Listen(buffer)
-	baseServer := CreateServer(config, lis)
-	go func() {
-		if err := baseServer.Serve(lis); err != nil {
-			log.Printf("error serving server: %v", err)
-		}
-	}()
-
+func newClient(ctx context.Context, lis *bufconn.Listener) proto.SyncerClient {
 	conn, err := grpc.DialContext(ctx, "",
 		grpc.WithContextDialer(func(context.Context, string) (net.Conn, error) {
 			return lis.Dial()
@@ -191,6 +218,18 @@ func server(ctx context.Context, config *config.Config) (proto.SyncerClient, fun
 	if err != nil {
 		log.Printf("error connecting to server: %v", err)
 	}
+
+	client := proto.NewSyncerClient(conn)
+	return client
+}
+
+func newServer(lis *bufconn.Listener, config *config.Config) func() {
+	baseServer := CreateServer(config, lis)
+	go func() {
+		if err := baseServer.Serve(lis); err != nil {
+			log.Printf("error serving server: %v", err)
+		}
+	}()
 
 	closer := func() {
 		err := lis.Close()
@@ -200,7 +239,5 @@ func server(ctx context.Context, config *config.Config) (proto.SyncerClient, fun
 		baseServer.Stop()
 	}
 
-	client := proto.NewSyncerClient(conn)
-
-	return client, closer
+	return closer
 }
