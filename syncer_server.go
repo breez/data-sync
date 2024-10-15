@@ -2,6 +2,11 @@ package main
 
 import (
 	"context"
+	"encoding/hex"
+	"fmt"
+	"log"
+	"sync"
+	"time"
 
 	"github.com/breez/data-sync/config"
 	"github.com/breez/data-sync/middleware"
@@ -9,12 +14,19 @@ import (
 	"github.com/breez/data-sync/store"
 )
 
+type User struct {
+	records_channel chan (*proto.Record)
+	listeners       []proto.Syncer_ListenChangesServer
+	mutex           sync.RWMutex
+}
+
 type PersistentSyncerServer struct {
 	proto.UnimplementedSyncerServer
 	config *config.Config
-}
 
-var recordsChannel = make(chan *proto.Record)
+	users map[string](*User)
+	mutex sync.RWMutex
+}
 
 func (s *PersistentSyncerServer) SetRecord(c context.Context, msg *proto.SetRecordRequest) (*proto.SetRecordReply, error) {
 	newId, err := c.Value(middleware.USER_DB_CONTEXT_KEY).(*store.SQLiteSyncStorage).SetRecord(
@@ -31,7 +43,14 @@ func (s *PersistentSyncerServer) SetRecord(c context.Context, msg *proto.SetReco
 		}
 		return nil, err
 	}
-	recordsChannel <- msg.Record
+
+	pubkey := c.Value(middleware.USER_PUBKEY_CONTEXT_KEY).(string)
+
+	if _, exists := s.users[pubkey]; !exists {
+		addUser(s, pubkey)
+	}
+	s.users[pubkey].records_channel <- msg.Record
+
 	return &proto.SetRecordReply{
 		Status: proto.SetRecordStatus_SUCCESS,
 		NewId:  newId,
@@ -56,9 +75,96 @@ func (s *PersistentSyncerServer) ListChanges(c context.Context, msg *proto.ListC
 	}, nil
 }
 
-func (s *PersistentSyncerServer) ListenChanges(msg *proto.ListenChangesRequest, srv proto.Syncer_ListenChangesServer) error {
-	for record := range recordsChannel {
-		srv.Send(record)
+func addUser(s *PersistentSyncerServer, pubkey string) {
+	s.mutex.Lock()
+	defer s.mutex.Unlock()
+	s.users[pubkey] = &User{
+		make(chan (*proto.Record)),
+		[]proto.Syncer_ListenChangesServer{},
+		sync.RWMutex{},
 	}
+	log.Printf("New user detected - pubkey %s id %p", pubkey, s.users[pubkey])
+}
+
+func removeUser(s *PersistentSyncerServer, pubkey string) {
+	s.mutex.Lock()
+	defer s.mutex.Unlock()
+	delete(s.users, pubkey)
+	log.Println("Removing user", pubkey)
+}
+
+func addListener(c *User, srv proto.Syncer_ListenChangesServer) {
+	c.mutex.Lock()
+	defer c.mutex.Unlock()
+	c.listeners = append(c.listeners, srv)
+	log.Printf("New listener detected for user %p\n", c)
+}
+
+func removeListener(c *User, srv proto.Syncer_ListenChangesServer) {
+	c.mutex.Lock()
+	defer c.mutex.Unlock()
+	for i, listener := range c.listeners {
+		if listener == srv {
+			c.listeners = append(c.listeners[:i], c.listeners[i+1:]...)
+		}
+	}
+	log.Printf("Removed listener for user %p\n", c)
+}
+
+func (s *PersistentSyncerServer) ListenChanges(msg *proto.ListenChangesRequest, srv proto.Syncer_ListenChangesServer) error {
+	var toVerify string
+	var signature string
+
+	toVerify = fmt.Sprintf("%v", msg.RequestTime)
+	signature = msg.Signature
+
+	pubkeyBytes, err := middleware.VerifyMessage([]byte(toVerify), signature)
+	if err != nil {
+		return err
+	}
+
+	pubkey := hex.EncodeToString(pubkeyBytes.SerializeCompressed())
+	if _, exists := s.users[pubkey]; !exists {
+		addUser(s, pubkey)
+	}
+	addListener(s.users[pubkey], srv)
+
+	// Spawn a thread to keep track of the context
+	// On disconnect, make sure we free the used memory
+	go func() {
+		for {
+			if err := srv.Context().Err(); err != nil {
+				removeListener(s.users[pubkey], srv)
+				if len(s.users[pubkey].listeners) == 0 {
+					removeUser(s, pubkey)
+				}
+				return
+			}
+			time.Sleep(60 * time.Second)
+		}
+	}()
+
+	srv.Send(&proto.Change{
+		Type:   proto.ChangeType_ACK,
+		Record: nil,
+	})
+
+	user := s.users[pubkey]
+	for record := range user.records_channel {
+		user.mutex.RLock()
+		for _, listener := range user.listeners {
+			listener.Send(&proto.Change{
+				Type:   proto.ChangeType_RECORD,
+				Record: record,
+			})
+		}
+		user.mutex.RUnlock()
+	}
+
+	srv.Send(&proto.Change{
+		Type:   proto.ChangeType_DISCONNECT,
+		Record: nil,
+	})
+
 	return nil
 }

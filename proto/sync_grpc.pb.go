@@ -30,7 +30,7 @@ const (
 type SyncerClient interface {
 	SetRecord(ctx context.Context, in *SetRecordRequest, opts ...grpc.CallOption) (*SetRecordReply, error)
 	ListChanges(ctx context.Context, in *ListChangesRequest, opts ...grpc.CallOption) (*ListChangesReply, error)
-	ListenChanges(ctx context.Context, in *ListenChangesRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[Record], error)
+	ListenChanges(ctx context.Context, in *ListenChangesRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[Change], error)
 }
 
 type syncerClient struct {
@@ -61,13 +61,13 @@ func (c *syncerClient) ListChanges(ctx context.Context, in *ListChangesRequest, 
 	return out, nil
 }
 
-func (c *syncerClient) ListenChanges(ctx context.Context, in *ListenChangesRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[Record], error) {
+func (c *syncerClient) ListenChanges(ctx context.Context, in *ListenChangesRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[Change], error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	stream, err := c.cc.NewStream(ctx, &Syncer_ServiceDesc.Streams[0], Syncer_ListenChanges_FullMethodName, cOpts...)
 	if err != nil {
 		return nil, err
 	}
-	x := &grpc.GenericClientStream[ListenChangesRequest, Record]{ClientStream: stream}
+	x := &grpc.GenericClientStream[ListenChangesRequest, Change]{ClientStream: stream}
 	if err := x.ClientStream.SendMsg(in); err != nil {
 		return nil, err
 	}
@@ -78,7 +78,7 @@ func (c *syncerClient) ListenChanges(ctx context.Context, in *ListenChangesReque
 }
 
 // This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
-type Syncer_ListenChangesClient = grpc.ServerStreamingClient[Record]
+type Syncer_ListenChangesClient = grpc.ServerStreamingClient[Change]
 
 // SyncerServer is the server API for Syncer service.
 // All implementations must embed UnimplementedSyncerServer
@@ -86,7 +86,7 @@ type Syncer_ListenChangesClient = grpc.ServerStreamingClient[Record]
 type SyncerServer interface {
 	SetRecord(context.Context, *SetRecordRequest) (*SetRecordReply, error)
 	ListChanges(context.Context, *ListChangesRequest) (*ListChangesReply, error)
-	ListenChanges(*ListenChangesRequest, grpc.ServerStreamingServer[Record]) error
+	ListenChanges(*ListenChangesRequest, grpc.ServerStreamingServer[Change]) error
 	mustEmbedUnimplementedSyncerServer()
 }
 
@@ -103,7 +103,7 @@ func (UnimplementedSyncerServer) SetRecord(context.Context, *SetRecordRequest) (
 func (UnimplementedSyncerServer) ListChanges(context.Context, *ListChangesRequest) (*ListChangesReply, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ListChanges not implemented")
 }
-func (UnimplementedSyncerServer) ListenChanges(*ListenChangesRequest, grpc.ServerStreamingServer[Record]) error {
+func (UnimplementedSyncerServer) ListenChanges(*ListenChangesRequest, grpc.ServerStreamingServer[Change]) error {
 	return status.Errorf(codes.Unimplemented, "method ListenChanges not implemented")
 }
 func (UnimplementedSyncerServer) mustEmbedUnimplementedSyncerServer() {}
@@ -168,11 +168,11 @@ func _Syncer_ListenChanges_Handler(srv interface{}, stream grpc.ServerStream) er
 	if err := stream.RecvMsg(m); err != nil {
 		return err
 	}
-	return srv.(SyncerServer).ListenChanges(m, &grpc.GenericServerStream[ListenChangesRequest, Record]{ServerStream: stream})
+	return srv.(SyncerServer).ListenChanges(m, &grpc.GenericServerStream[ListenChangesRequest, Change]{ServerStream: stream})
 }
 
 // This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
-type Syncer_ListenChangesServer = grpc.ServerStreamingServer[Record]
+type Syncer_ListenChangesServer = grpc.ServerStreamingServer[Change]
 
 // Syncer_ServiceDesc is the grpc.ServiceDesc for Syncer service.
 // It's only intended for direct use with grpc.RegisterService,

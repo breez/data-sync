@@ -19,12 +19,13 @@ import (
 )
 
 const (
-	USER_DB_CONTEXT_KEY = "user_db"
+	USER_DB_CONTEXT_KEY     = "user_db"
+	USER_PUBKEY_CONTEXT_KEY = "user_pubkey"
 )
 
 var ErrInternalError = fmt.Errorf("internal error")
 var ErrInvalidSignature = fmt.Errorf("invalid signature")
-var SignedMsgPrefix = []byte("Lightning Signed Message:")
+var SignedMsgPrefix = []byte("realtimesync:")
 
 func UnaryAuth(config *config.Config) grpc.UnaryServerInterceptor {
 	return func(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
@@ -43,12 +44,6 @@ func UnaryAuth(config *config.Config) grpc.UnaryServerInterceptor {
 			signature = listChangesReq.Signature
 		}
 
-		listenChangesReq, ok := req.(*proto.ListenChangesRequest)
-		if ok {
-			toVerify = fmt.Sprintf("%v", listChangesReq.RequestTime)
-			signature = listenChangesReq.Signature
-		}
-
 		pubkey, err := VerifyMessage([]byte(toVerify), signature)
 		if err != nil {
 			return nil, err
@@ -65,7 +60,11 @@ func UnaryAuth(config *config.Config) grpc.UnaryServerInterceptor {
 			log.Printf("failed to connect to database file %v: %v", storeFile, err)
 			return nil, ErrInternalError
 		}
-		return handler(context.WithValue(ctx, USER_DB_CONTEXT_KEY, db), req)
+
+		ctx = context.WithValue(ctx, USER_PUBKEY_CONTEXT_KEY, hex.EncodeToString(pubkeyBytes))
+		ctx = context.WithValue(ctx, USER_DB_CONTEXT_KEY, db)
+
+		return handler(ctx, req)
 	}
 }
 
