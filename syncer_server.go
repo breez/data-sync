@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"log"
 	"sync"
-	"time"
 
 	"github.com/breez/data-sync/config"
 	"github.com/breez/data-sync/middleware"
@@ -90,7 +89,7 @@ func removeUser(s *PersistentSyncerServer, pubkey string) {
 	s.mutex.Lock()
 	defer s.mutex.Unlock()
 	delete(s.users, pubkey)
-	log.Println("Removing user", pubkey)
+	log.Println("Removed user", pubkey)
 }
 
 func addListener(c *User, srv proto.Syncer_ListenChangesServer) {
@@ -128,21 +127,6 @@ func (s *PersistentSyncerServer) ListenChanges(msg *proto.ListenChangesRequest, 
 		addUser(s, pubkey)
 	}
 	addListener(s.users[pubkey], srv)
-
-	// Spawn a thread to keep track of the context
-	// On disconnect, make sure we free the used memory
-	go func() {
-		for {
-			if err := srv.Context().Err(); err != nil {
-				removeListener(s.users[pubkey], srv)
-				if len(s.users[pubkey].listeners) == 0 {
-					removeUser(s, pubkey)
-				}
-				return
-			}
-			time.Sleep(60 * time.Second)
-		}
-	}()
 
 	srv.Send(&proto.Change{
 		Type:   proto.ChangeType_ACK,
