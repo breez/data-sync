@@ -44,10 +44,8 @@ func TestSyncService(t *testing.T) {
 	client2 := newClient(context.Background(), lis)
 
 	changes_stream1 := listenChanges(t, privateKey, client1)
-	changes_stream1.Recv() // Receive ACK
 
 	changes_stream2 := listenChanges(t, privateKey, client2)
-	changes_stream2.Recv() // Receive ACK
 
 	defer closer()
 	defer func() {
@@ -63,10 +61,10 @@ func TestSyncService(t *testing.T) {
 			}
 
 			// Test that the expected value matches the one received from the stream
-			change1, err := changes_stream1.Recv()
+			record1, err := changes_stream1.Recv()
 			require.NoError(t, err, "failed to receive changes")
 
-			received_json, err := json.Marshal(change1.Record)
+			received_json, err := json.Marshal(record1)
 			require.NoError(t, err, "failed to serialize received record")
 
 			expected_json, err := json.Marshal(testCase.request.(*proto.SetRecordRequest).Record)
@@ -75,10 +73,10 @@ func TestSyncService(t *testing.T) {
 			require.Equal(t, received_json, expected_json)
 
 			// Test that the second client also received a valid value
-			change2, err := changes_stream2.Recv()
+			record2, err := changes_stream2.Recv()
 			require.NoError(t, err, "failed to receive changes")
 
-			received_json, err = json.Marshal(change2.Record)
+			received_json, err = json.Marshal(record2)
 			require.NoError(t, err, "failed to serialize received record")
 
 			require.Equal(t, received_json, expected_json)
@@ -180,7 +178,7 @@ func testCases() []testCase {
 	}
 }
 
-func listenChanges(t *testing.T, privateKey *btcec.PrivateKey, client proto.SyncerClient) grpc.ServerStreamingClient[proto.Change] {
+func listenChanges(t *testing.T, privateKey *btcec.PrivateKey, client proto.SyncerClient) grpc.ServerStreamingClient[proto.Record] {
 	requestTime := time.Now().Unix()
 	toSign := fmt.Sprintf("%v", requestTime)
 	signature, err := middleware.SignMessage(privateKey, []byte(toSign))
