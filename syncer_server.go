@@ -128,27 +128,14 @@ func (s *PersistentSyncerServer) ListenChanges(msg *proto.ListenChangesRequest, 
 	}
 	addListener(s.users[pubkey], srv)
 
-	srv.Send(&proto.Change{
-		Type:   proto.ChangeType_ACK,
-		Record: nil,
-	})
-
 	user := s.users[pubkey]
 	for record := range user.records_channel {
 		user.mutex.RLock()
 		for _, listener := range user.listeners {
-			listener.Send(&proto.Change{
-				Type:   proto.ChangeType_RECORD,
-				Record: record,
-			})
+			listener.Send(record)
 		}
 		user.mutex.RUnlock()
 	}
-
-	srv.Send(&proto.Change{
-		Type:   proto.ChangeType_DISCONNECT,
-		Record: nil,
-	})
 
 	return nil
 }
