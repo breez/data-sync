@@ -34,7 +34,14 @@ func UnaryAuth(config *config.Config) grpc.UnaryServerInterceptor {
 		var signature string
 		setRecordReq, ok := req.(*proto.SetRecordRequest)
 		if ok {
-			toVerify = fmt.Sprintf("%v-%v-%x-%v", setRecordReq.Record.Id, setRecordReq.Record.Revision, setRecordReq.Record.Data, setRecordReq.RequestTime)
+			toVerify = fmt.Sprintf(
+				"%v-%v-%v-%x-%v",
+				setRecordReq.Record.Id,
+				setRecordReq.Record.Revision,
+				setRecordReq.Record.SchemaVersion,
+				setRecordReq.Record.Data,
+				setRecordReq.RequestTime,
+			)
 			signature = setRecordReq.Signature
 		}
 

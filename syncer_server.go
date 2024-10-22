@@ -28,7 +28,7 @@ type PersistentSyncerServer struct {
 }
 
 func (s *PersistentSyncerServer) SetRecord(c context.Context, msg *proto.SetRecordRequest) (*proto.SetRecordReply, error) {
-	newRevision, err := c.Value(middleware.USER_DB_CONTEXT_KEY).(*store.SQLiteSyncStorage).SetRecord(c, msg.Record.Id, msg.Record.Data, msg.Record.Revision)
+	newRevision, err := c.Value(middleware.USER_DB_CONTEXT_KEY).(*store.SQLiteSyncStorage).SetRecord(c, msg.Record.Id, msg.Record.Revision, msg.Record.SchemaVersion, msg.Record.Data)
 	if err != nil {
 		if err == store.ErrSetConflict {
 			return &proto.SetRecordReply{
@@ -39,11 +39,10 @@ func (s *PersistentSyncerServer) SetRecord(c context.Context, msg *proto.SetReco
 	}
 
 	pubkey := c.Value(middleware.USER_PUBKEY_CONTEXT_KEY).(string)
-
-	if _, exists := s.users[pubkey]; !exists {
-		addUser(s, pubkey)
+	if user, exists := s.users[pubkey]; exists {
+		msg.Record.Revision = newRevision
+		user.records_channel <- msg.Record
 	}
-	s.users[pubkey].records_channel <- msg.Record
 
 	return &proto.SetRecordReply{
 		Status:      proto.SetRecordStatus_SUCCESS,
@@ -59,9 +58,10 @@ func (s *PersistentSyncerServer) ListChanges(c context.Context, msg *proto.ListC
 	records := make([]*proto.Record, len(changed))
 	for i, r := range changed {
 		records[i] = &proto.Record{
-			Id:       r.RecordID,
-			Data:     r.Data,
-			Revision: r.Revision,
+			Id:            r.Id,
+			Data:          r.Data,
+			Revision:      r.Revision,
+			SchemaVersion: r.SchemaVersion,
 		}
 	}
 	return &proto.ListChangesReply{

@@ -44,7 +44,6 @@ func TestSyncService(t *testing.T) {
 	client2 := newClient(context.Background(), lis)
 
 	changes_stream1 := listenChanges(t, privateKey, client1)
-
 	changes_stream2 := listenChanges(t, privateKey, client2)
 
 	defer closer()
@@ -63,23 +62,12 @@ func TestSyncService(t *testing.T) {
 			// Test that the expected value matches the one received from the stream
 			record1, err := changes_stream1.Recv()
 			require.NoError(t, err, "failed to receive changes")
-
-			received_json, err := json.Marshal(record1)
-			require.NoError(t, err, "failed to serialize received record")
-
-			expected_json, err := json.Marshal(testCase.request.(*proto.SetRecordRequest).Record)
-			require.NoError(t, err, "failed to serialize expected record")
-
-			require.Equal(t, received_json, expected_json)
+			require.Equal(t, record1.Data, testCase.request.(*proto.SetRecordRequest).Record.Data)
 
 			// Test that the second client also received a valid value
 			record2, err := changes_stream2.Recv()
 			require.NoError(t, err, "failed to receive changes")
-
-			received_json, err = json.Marshal(record2)
-			require.NoError(t, err, "failed to serialize received record")
-
-			require.Equal(t, received_json, expected_json)
+			require.Equal(t, record2.Data, testCase.request.(*proto.SetRecordRequest).Record.Data)
 		}
 		if listChangesRequest, ok := testCase.request.(*proto.ListChangesRequest); ok {
 			testListChanges(t, privateKey, client1, listChangesRequest, testCase)
@@ -106,9 +94,10 @@ func testCases() []testCase {
 			name: "initial record insert",
 			request: &proto.SetRecordRequest{
 				Record: &proto.Record{
-					Id:       "1",
-					Revision: 0,
-					Data:     []byte("{}"),
+					Id:            "1",
+					Revision:      0,
+					SchemaVersion: 0.1,
+					Data:          []byte("{}"),
 				},
 			},
 			reply: &proto.SetRecordReply{
@@ -122,9 +111,10 @@ func testCases() []testCase {
 			name: "initial record update",
 			request: &proto.SetRecordRequest{
 				Record: &proto.Record{
-					Id:       "1",
-					Revision: 1,
-					Data:     []byte("{}"),
+					Id:            "1",
+					Revision:      1,
+					SchemaVersion: 0.1,
+					Data:          []byte("{}"),
 				},
 			},
 			reply: &proto.SetRecordReply{
@@ -138,9 +128,10 @@ func testCases() []testCase {
 			name: "test conflict",
 			request: &proto.SetRecordRequest{
 				Record: &proto.Record{
-					Id:       "1",
-					Revision: 1,
-					Data:     []byte("{}"),
+					Id:            "1",
+					Revision:      1,
+					SchemaVersion: 0.1,
+					Data:          []byte("{}"),
 				},
 			},
 			reply: &proto.SetRecordReply{
@@ -168,9 +159,10 @@ func testCases() []testCase {
 			reply: &proto.ListChangesReply{
 				Changes: []*proto.Record{
 					{
-						Id:       "1",
-						Revision: 2,
-						Data:     []byte("{}"),
+						Id:            "1",
+						Revision:      2,
+						SchemaVersion: 0.1,
+						Data:          []byte("{}"),
 					},
 				},
 			},
@@ -194,10 +186,17 @@ func listenChanges(t *testing.T, privateKey *btcec.PrivateKey, client proto.Sync
 
 func testSetRecord(t *testing.T, privateKey *btcec.PrivateKey, client proto.SyncerClient, request *proto.SetRecordRequest, test testCase) {
 	requestTime := time.Now().Unix()
-	toSign := fmt.Sprintf("%v-%v-%x-%v", request.Record.Id, request.Record.Revision, request.Record.Data, requestTime)
+	request.RequestTime = requestTime
+	toSign := fmt.Sprintf(
+		"%v-%v-%v-%x-%v",
+		request.Record.Id,
+		request.Record.Revision,
+		request.Record.SchemaVersion,
+		request.Record.Data,
+		request.RequestTime,
+	)
 	signature, err := middleware.SignMessage(privateKey, []byte(toSign))
 	require.NoError(t, err, "failed to sign message")
-	request.RequestTime = requestTime
 	request.Signature = signature
 	response, err := client.SetRecord(context.Background(), request)
 	require.NoError(t, err, "failed to call SetRecord")
