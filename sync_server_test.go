@@ -94,7 +94,7 @@ func testCases() []testCase {
 		{
 			name: "empty db, no changes",
 			request: &proto.ListChangesRequest{
-				SinceVersion: 0,
+				SinceRevision: 0,
 			},
 			reply: &proto.ListChangesReply{
 				Changes: []*proto.Record{},
@@ -106,14 +106,14 @@ func testCases() []testCase {
 			name: "initial record insert",
 			request: &proto.SetRecordRequest{
 				Record: &proto.Record{
-					Id:      "1",
-					Version: 0,
-					Data:    []byte("version1"),
+					Id:       "1",
+					Revision: 0,
+					Data:     []byte("{}"),
 				},
 			},
 			reply: &proto.SetRecordReply{
-				Status:     proto.SetRecordStatus_SUCCESS,
-				NewVersion: 1,
+				Status:      proto.SetRecordStatus_SUCCESS,
+				NewRevision: 1,
 			},
 		},
 
@@ -122,14 +122,14 @@ func testCases() []testCase {
 			name: "initial record update",
 			request: &proto.SetRecordRequest{
 				Record: &proto.Record{
-					Id:      "1",
-					Version: 1,
-					Data:    []byte("version2"),
+					Id:       "1",
+					Revision: 1,
+					Data:     []byte("{}"),
 				},
 			},
 			reply: &proto.SetRecordReply{
-				Status:     proto.SetRecordStatus_SUCCESS,
-				NewVersion: 2,
+				Status:      proto.SetRecordStatus_SUCCESS,
+				NewRevision: 2,
 			},
 		},
 
@@ -138,9 +138,9 @@ func testCases() []testCase {
 			name: "test conflict",
 			request: &proto.SetRecordRequest{
 				Record: &proto.Record{
-					Id:      "1",
-					Version: 1,
-					Data:    []byte("version3"),
+					Id:       "1",
+					Revision: 1,
+					Data:     []byte("{}"),
 				},
 			},
 			reply: &proto.SetRecordReply{
@@ -148,11 +148,11 @@ func testCases() []testCase {
 			},
 		},
 
-		// no changes since version 5
+		// no changes since revision 5
 		{
 			name: "empty changes",
 			request: &proto.ListChangesRequest{
-				SinceVersion: 5,
+				SinceRevision: 5,
 			},
 			reply: &proto.ListChangesReply{
 				Changes: []*proto.Record{},
@@ -163,14 +163,14 @@ func testCases() []testCase {
 		{
 			name: "list changes returns 1 record",
 			request: &proto.ListChangesRequest{
-				SinceVersion: 0,
+				SinceRevision: 0,
 			},
 			reply: &proto.ListChangesReply{
 				Changes: []*proto.Record{
 					{
-						Id:      "1",
-						Version: 2,
-						Data:    []byte("version2"),
+						Id:       "1",
+						Revision: 2,
+						Data:     []byte("{}"),
 					},
 				},
 			},
@@ -194,7 +194,7 @@ func listenChanges(t *testing.T, privateKey *btcec.PrivateKey, client proto.Sync
 
 func testSetRecord(t *testing.T, privateKey *btcec.PrivateKey, client proto.SyncerClient, request *proto.SetRecordRequest, test testCase) {
 	requestTime := time.Now().Unix()
-	toSign := fmt.Sprintf("%v-%v-%x-%v", request.Record.Id, request.Record.Version, request.Record.Data, requestTime)
+	toSign := fmt.Sprintf("%v-%v-%x-%v", request.Record.Id, request.Record.Revision, request.Record.Data, requestTime)
 	signature, err := middleware.SignMessage(privateKey, []byte(toSign))
 	require.NoError(t, err, "failed to sign message")
 	request.RequestTime = requestTime
@@ -210,7 +210,7 @@ func testSetRecord(t *testing.T, privateKey *btcec.PrivateKey, client proto.Sync
 
 func testListChanges(t *testing.T, privateKey *btcec.PrivateKey, client proto.SyncerClient, request *proto.ListChangesRequest, test testCase) {
 	requestTime := time.Now().Unix()
-	toSign := fmt.Sprintf("%v-%v", request.SinceVersion, requestTime)
+	toSign := fmt.Sprintf("%v-%v", request.SinceRevision, requestTime)
 	signature, err := middleware.SignMessage(privateKey, []byte(toSign))
 	require.NoError(t, err, "failed to sign message")
 	request.RequestTime = requestTime
