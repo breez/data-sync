@@ -19,12 +19,13 @@ import (
 )
 
 const (
-	USER_DB_CONTEXT_KEY = "user_db"
+	USER_DB_CONTEXT_KEY     = "user_db"
+	USER_PUBKEY_CONTEXT_KEY = "user_pubkey"
 )
 
 var ErrInternalError = fmt.Errorf("internal error")
 var ErrInvalidSignature = fmt.Errorf("invalid signature")
-var SignedMsgPrefix = []byte("Lightning Signed Message:")
+var SignedMsgPrefix = []byte("realtimesync:")
 
 func UnaryAuth(config *config.Config) grpc.UnaryServerInterceptor {
 	return func(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
@@ -33,13 +34,20 @@ func UnaryAuth(config *config.Config) grpc.UnaryServerInterceptor {
 		var signature string
 		setRecordReq, ok := req.(*proto.SetRecordRequest)
 		if ok {
-			toVerify = fmt.Sprintf("%v-%v-%x-%v", setRecordReq.Record.Id, setRecordReq.Record.Version, setRecordReq.Record.Data, setRecordReq.RequestTime)
+			toVerify = fmt.Sprintf(
+				"%v-%v-%v-%x-%v",
+				setRecordReq.Record.Id,
+				setRecordReq.Record.Revision,
+				setRecordReq.Record.SchemaVersion,
+				setRecordReq.Record.Data,
+				setRecordReq.RequestTime,
+			)
 			signature = setRecordReq.Signature
 		}
 
 		listChangesReq, ok := req.(*proto.ListChangesRequest)
 		if ok {
-			toVerify = fmt.Sprintf("%v-%v", listChangesReq.SinceVersion, listChangesReq.RequestTime)
+			toVerify = fmt.Sprintf("%v-%v", listChangesReq.SinceRevision, listChangesReq.RequestTime)
 			signature = listChangesReq.Signature
 		}
 
@@ -59,7 +67,11 @@ func UnaryAuth(config *config.Config) grpc.UnaryServerInterceptor {
 			log.Printf("failed to connect to database file %v: %v", storeFile, err)
 			return nil, ErrInternalError
 		}
-		return handler(context.WithValue(ctx, USER_DB_CONTEXT_KEY, db), req)
+
+		ctx = context.WithValue(ctx, USER_PUBKEY_CONTEXT_KEY, hex.EncodeToString(pubkeyBytes))
+		ctx = context.WithValue(ctx, USER_DB_CONTEXT_KEY, db)
+
+		return handler(ctx, req)
 	}
 }
 

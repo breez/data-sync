@@ -35,7 +35,17 @@ func TestSyncService(t *testing.T) {
 	privateKey, err := btcec.NewPrivateKey()
 	require.NoError(t, err, "failed to create private key")
 	os.RemoveAll(config.UsersDatabasesDir)
-	client, closer := server(context.Background(), config)
+
+	buffer := 101024 * 1024
+	lis := bufconn.Listen(buffer)
+	closer := newServer(lis, config)
+
+	client1 := newClient(context.Background(), lis)
+	client2 := newClient(context.Background(), lis)
+
+	changes_stream1 := listenChanges(t, privateKey, client1)
+	changes_stream2 := listenChanges(t, privateKey, client2)
+
 	defer closer()
 	defer func() {
 		os.RemoveAll(config.UsersDatabasesDir)
@@ -43,10 +53,24 @@ func TestSyncService(t *testing.T) {
 
 	for _, testCase := range testCases() {
 		if setRecordRequest, ok := testCase.request.(*proto.SetRecordRequest); ok {
-			testSetRecord(t, privateKey, client, setRecordRequest, testCase)
+			testSetRecord(t, privateKey, client1, setRecordRequest, testCase)
+
+			if testCase.reply.(*proto.SetRecordReply).Status != proto.SetRecordStatus_SUCCESS {
+				continue
+			}
+
+			// Test that the expected value matches the one received from the stream
+			record1, err := changes_stream1.Recv()
+			require.NoError(t, err, "failed to receive changes")
+			require.Equal(t, record1.Data, testCase.request.(*proto.SetRecordRequest).Record.Data)
+
+			// Test that the second client also received a valid value
+			record2, err := changes_stream2.Recv()
+			require.NoError(t, err, "failed to receive changes")
+			require.Equal(t, record2.Data, testCase.request.(*proto.SetRecordRequest).Record.Data)
 		}
 		if listChangesRequest, ok := testCase.request.(*proto.ListChangesRequest); ok {
-			testListChanges(t, privateKey, client, listChangesRequest, testCase)
+			testListChanges(t, privateKey, client1, listChangesRequest, testCase)
 		}
 	}
 }
@@ -58,7 +82,7 @@ func testCases() []testCase {
 		{
 			name: "empty db, no changes",
 			request: &proto.ListChangesRequest{
-				SinceVersion: 0,
+				SinceRevision: 0,
 			},
 			reply: &proto.ListChangesReply{
 				Changes: []*proto.Record{},
@@ -70,14 +94,15 @@ func testCases() []testCase {
 			name: "initial record insert",
 			request: &proto.SetRecordRequest{
 				Record: &proto.Record{
-					Id:      "1",
-					Version: 0,
-					Data:    []byte("version1"),
+					Id:            "1",
+					Revision:      0,
+					SchemaVersion: 0.1,
+					Data:          []byte("{}"),
 				},
 			},
 			reply: &proto.SetRecordReply{
-				Status:     proto.SetRecordStatus_SUCCESS,
-				NewVersion: 1,
+				Status:      proto.SetRecordStatus_SUCCESS,
+				NewRevision: 1,
 			},
 		},
 
@@ -86,14 +111,15 @@ func testCases() []testCase {
 			name: "initial record update",
 			request: &proto.SetRecordRequest{
 				Record: &proto.Record{
-					Id:      "1",
-					Version: 1,
-					Data:    []byte("version2"),
+					Id:            "1",
+					Revision:      1,
+					SchemaVersion: 0.1,
+					Data:          []byte("{}"),
 				},
 			},
 			reply: &proto.SetRecordReply{
-				Status:     proto.SetRecordStatus_SUCCESS,
-				NewVersion: 2,
+				Status:      proto.SetRecordStatus_SUCCESS,
+				NewRevision: 2,
 			},
 		},
 
@@ -102,9 +128,10 @@ func testCases() []testCase {
 			name: "test conflict",
 			request: &proto.SetRecordRequest{
 				Record: &proto.Record{
-					Id:      "1",
-					Version: 1,
-					Data:    []byte("version3"),
+					Id:            "1",
+					Revision:      1,
+					SchemaVersion: 0.1,
+					Data:          []byte("{}"),
 				},
 			},
 			reply: &proto.SetRecordReply{
@@ -112,11 +139,11 @@ func testCases() []testCase {
 			},
 		},
 
-		// no changes since version 5
+		// no changes since revision 5
 		{
 			name: "empty changes",
 			request: &proto.ListChangesRequest{
-				SinceVersion: 5,
+				SinceRevision: 5,
 			},
 			reply: &proto.ListChangesReply{
 				Changes: []*proto.Record{},
@@ -127,14 +154,15 @@ func testCases() []testCase {
 		{
 			name: "list changes returns 1 record",
 			request: &proto.ListChangesRequest{
-				SinceVersion: 0,
+				SinceRevision: 0,
 			},
 			reply: &proto.ListChangesReply{
 				Changes: []*proto.Record{
 					{
-						Id:      "1",
-						Version: 2,
-						Data:    []byte("version2"),
+						Id:            "1",
+						Revision:      2,
+						SchemaVersion: 0.1,
+						Data:          []byte("{}"),
 					},
 				},
 			},
@@ -142,12 +170,33 @@ func testCases() []testCase {
 	}
 }
 
-func testSetRecord(t *testing.T, privateKey *btcec.PrivateKey, client proto.SyncerClient, request *proto.SetRecordRequest, test testCase) {
+func listenChanges(t *testing.T, privateKey *btcec.PrivateKey, client proto.SyncerClient) grpc.ServerStreamingClient[proto.Record] {
 	requestTime := time.Now().Unix()
-	toSign := fmt.Sprintf("%v-%v-%x-%v", request.Record.Id, request.Record.Version, request.Record.Data, requestTime)
+	toSign := fmt.Sprintf("%v", requestTime)
 	signature, err := middleware.SignMessage(privateKey, []byte(toSign))
 	require.NoError(t, err, "failed to sign message")
+	request := proto.ListenChangesRequest{
+		RequestTime: uint32(requestTime),
+		Signature:   signature,
+	}
+	stream, err := client.ListenChanges(context.Background(), &request)
+	require.NoError(t, err, "failed to call ListenChanges")
+	return stream
+}
+
+func testSetRecord(t *testing.T, privateKey *btcec.PrivateKey, client proto.SyncerClient, request *proto.SetRecordRequest, test testCase) {
+	requestTime := time.Now().Unix()
 	request.RequestTime = requestTime
+	toSign := fmt.Sprintf(
+		"%v-%v-%v-%x-%v",
+		request.Record.Id,
+		request.Record.Revision,
+		request.Record.SchemaVersion,
+		request.Record.Data,
+		request.RequestTime,
+	)
+	signature, err := middleware.SignMessage(privateKey, []byte(toSign))
+	require.NoError(t, err, "failed to sign message")
 	request.Signature = signature
 	response, err := client.SetRecord(context.Background(), request)
 	require.NoError(t, err, "failed to call SetRecord")
@@ -160,7 +209,7 @@ func testSetRecord(t *testing.T, privateKey *btcec.PrivateKey, client proto.Sync
 
 func testListChanges(t *testing.T, privateKey *btcec.PrivateKey, client proto.SyncerClient, request *proto.ListChangesRequest, test testCase) {
 	requestTime := time.Now().Unix()
-	toSign := fmt.Sprintf("%v-%v", request.SinceVersion, requestTime)
+	toSign := fmt.Sprintf("%v-%v", request.SinceRevision, requestTime)
 	signature, err := middleware.SignMessage(privateKey, []byte(toSign))
 	require.NoError(t, err, "failed to sign message")
 	request.RequestTime = requestTime
@@ -174,16 +223,7 @@ func testListChanges(t *testing.T, privateKey *btcec.PrivateKey, client proto.Sy
 	require.Equal(t, res, expected, fmt.Sprintf("failed to compare test results for %v", test.name))
 }
 
-func server(ctx context.Context, config *config.Config) (proto.SyncerClient, func()) {
-	buffer := 101024 * 1024
-	lis := bufconn.Listen(buffer)
-	baseServer := CreateServer(config, lis)
-	go func() {
-		if err := baseServer.Serve(lis); err != nil {
-			log.Printf("error serving server: %v", err)
-		}
-	}()
-
+func newClient(ctx context.Context, lis *bufconn.Listener) proto.SyncerClient {
 	conn, err := grpc.DialContext(ctx, "",
 		grpc.WithContextDialer(func(context.Context, string) (net.Conn, error) {
 			return lis.Dial()
@@ -191,6 +231,18 @@ func server(ctx context.Context, config *config.Config) (proto.SyncerClient, fun
 	if err != nil {
 		log.Printf("error connecting to server: %v", err)
 	}
+
+	client := proto.NewSyncerClient(conn)
+	return client
+}
+
+func newServer(lis *bufconn.Listener, config *config.Config) func() {
+	baseServer := CreateServer(config, lis)
+	go func() {
+		if err := baseServer.Serve(lis); err != nil {
+			log.Printf("error serving server: %v", err)
+		}
+	}()
 
 	closer := func() {
 		err := lis.Close()
@@ -200,7 +252,5 @@ func server(ctx context.Context, config *config.Config) (proto.SyncerClient, fun
 		baseServer.Stop()
 	}
 
-	client := proto.NewSyncerClient(conn)
-
-	return client, closer
+	return closer
 }
