@@ -150,6 +150,7 @@ func (c *eventsManager) start(quitChan chan struct{}) {
 					for _, sub := range c.streams[s.pubkey] {
 						if sub.id != s.id {
 							newSubs = append(newSubs, sub)
+							continue
 						}
 						close(sub.eventsChan)
 					}
