@@ -79,7 +79,7 @@ func TestTrackChanges(t *testing.T) {
 
 func createSetRecordRequest(t *testing.T, privateKey *btcec.PrivateKey, record *proto.Record) *proto.SetRecordRequest {
 	requestTime := uint32(time.Now().Unix())
-	toSign := fmt.Sprintf("%v-%x-%v-%v", record.Id, record.Data, record.Revision, requestTime)
+	toSign := middleware.SignSetRecord(record, requestTime)
 	signature, err := middleware.SignMessage(privateKey, []byte(toSign))
 	require.NoError(t, err, "failed to sign message")
 	return &proto.SetRecordRequest{
@@ -193,7 +193,7 @@ func testCases() []testCase {
 
 func testSetRecord(t *testing.T, privateKey *btcec.PrivateKey, client proto.SyncerClient, request *proto.SetRecordRequest, test testCase) {
 	requestTime := uint32(time.Now().Unix())
-	toSign := fmt.Sprintf("%v-%x-%v-%v", request.Record.Id, request.Record.Data, request.Record.Revision, requestTime)
+	toSign := middleware.SignSetRecord(request.Record, requestTime)
 	signature, err := middleware.SignMessage(privateKey, []byte(toSign))
 	require.NoError(t, err, "failed to sign message")
 	request.RequestTime = requestTime

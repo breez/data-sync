@@ -30,7 +30,7 @@ func Authenticate(config *config.Config, ctx context.Context, req interface{}) (
 	var signature string
 	setRecordReq, ok := req.(*proto.SetRecordRequest)
 	if ok {
-		toVerify = fmt.Sprintf("%v-%x-%v-%v", setRecordReq.Record.Id, setRecordReq.Record.Data, setRecordReq.Record.Revision, setRecordReq.RequestTime)
+		toVerify = SignSetRecord(setRecordReq.Record, setRecordReq.RequestTime)
 		signature = setRecordReq.Signature
 	}
 
@@ -65,6 +65,17 @@ func Authenticate(config *config.Config, ctx context.Context, req interface{}) (
 	newContext := context.WithValue(ctx, USER_DB_CONTEXT_KEY, db)
 	newContext = context.WithValue(newContext, USER_PUBKEY_CONTEXT_KEY, hex.EncodeToString(pubkeyBytes))
 	return newContext, nil
+}
+
+func SignSetRecord(record *proto.Record, requestTime uint32) string {
+	return fmt.Sprintf(
+		"%v-%x-%v-%v-%v",
+		record.Id,
+		record.Data,
+		record.Revision,
+		record.SchemaVersion,
+		requestTime,
+	)
 }
 
 func SignMessage(key *btcec.PrivateKey, msg []byte) (string, error) {
