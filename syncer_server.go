@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"log"
 	"sync"
 
 	"github.com/breez/data-sync/config"
@@ -181,9 +182,11 @@ func (c *eventsManager) subscribe(pubkey string) *subscription {
 	c.globalIDs += 1
 	s := &subscription{pubkey: pubkey, eventsChan: eventsChan, id: c.globalIDs}
 	c.msgChan <- s
+	log.Printf("New connection for user %s: id - %d\n", pubkey, c.globalIDs)
 	return s
 }
 
 func (c *eventsManager) unsubscribe(pubkey string, id int64) {
 	c.msgChan <- &unsubscribe{pubkey: pubkey, id: id}
+	log.Printf("Removing connection for user %s - id %d\n", pubkey, id)
 }
