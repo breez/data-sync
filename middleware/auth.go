@@ -23,7 +23,7 @@ const (
 
 var ErrInternalError = fmt.Errorf("internal error")
 var ErrInvalidSignature = fmt.Errorf("invalid signature")
-var SignedMsgPrefix = []byte("Lightning Signed Message:")
+var SignedMsgPrefix = []byte("realtimesync:")
 
 func Authenticate(config *config.Config, ctx context.Context, req interface{}) (context.Context, error) {
 	var toVerify string
