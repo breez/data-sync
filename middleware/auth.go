@@ -30,19 +30,19 @@ func Authenticate(config *config.Config, ctx context.Context, req interface{}) (
 	var signature string
 	setRecordReq, ok := req.(*proto.SetRecordRequest)
 	if ok {
-		toVerify = fmt.Sprintf("%v-%v-%x-%v", setRecordReq.Record.Id, setRecordReq.Record.Version, setRecordReq.Record.Data, setRecordReq.RequestTime)
+		toVerify = fmt.Sprintf("%v-%x-%v-%v", setRecordReq.Record.Id, setRecordReq.Record.Data, setRecordReq.Record.Revision, setRecordReq.RequestTime)
 		signature = setRecordReq.Signature
 	}
 
 	listChangesReq, ok := req.(*proto.ListChangesRequest)
 	if ok {
-		toVerify = fmt.Sprintf("%v-%v", listChangesReq.SinceVersion, listChangesReq.RequestTime)
+		toVerify = fmt.Sprintf("%v-%v", listChangesReq.SinceRevision, listChangesReq.RequestTime)
 		signature = listChangesReq.Signature
 	}
 
 	trackChangesReq, ok := req.(*proto.TrackChangesRequest)
 	if ok {
-		toVerify = fmt.Sprintf("%v-%v", trackChangesReq.SinceVersion, trackChangesReq.RequestTime)
+		toVerify = fmt.Sprintf("%v", trackChangesReq.RequestTime)
 		signature = trackChangesReq.Signature
 	}
 

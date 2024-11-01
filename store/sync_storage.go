@@ -21,13 +21,13 @@ var _ = pkger.Include("/store/migrations")
 var ErrSetConflict = errors.New("set conflict")
 
 type StoredRecord struct {
-	RecordID string
-	Version  int64
+	Id       string
 	Data     []byte
+	Revision int64
 }
 type SyncStorage interface {
-	SetRecord(ctx context.Context, id string, existingVersion int64, data []byte) error
-	ListChanges(ctx context.Context, id string, sinceVersion int64) ([]StoredRecord, error)
+	SetRecord(ctx context.Context, id string, existingRevision int64, data []byte) error
+	ListChanges(ctx context.Context, id string, sinceRevision int64) ([]StoredRecord, error)
 }
 
 type SQLiteSyncStorage struct {
@@ -66,39 +66,39 @@ func Connect(file string) (*SQLiteSyncStorage, error) {
 	return &SQLiteSyncStorage{db: db}, nil
 }
 
-func (s *SQLiteSyncStorage) SetRecord(ctx context.Context, recordID string, data []byte, existingVersion int64) (int64, error) {
-	var version int64
-	err := s.db.QueryRow("SELECT version FROM RECORDS WHERE record_id = ?", recordID).Scan(&version)
+func (s *SQLiteSyncStorage) SetRecord(ctx context.Context, id string, data []byte, existingRevision int64) (int64, error) {
+	var revision int64
+	err := s.db.QueryRow("SELECT revision FROM records WHERE id = ?", id).Scan(&revision)
 	if err != sql.ErrNoRows {
 		if err != nil {
-			return 0, fmt.Errorf("failed to currenet version %w", err)
+			return 0, fmt.Errorf("failed to get record's latest revision: %w", err)
 		}
-		if existingVersion != version {
+		if existingRevision != revision {
 			return 0, ErrSetConflict
 		}
 	}
 
-	res, err := s.db.Exec("INSERT OR REPLACE INTO RECORDS (record_id, data) VALUES (?, ?)", recordID, data)
+	res, err := s.db.Exec("INSERT OR REPLACE INTO records (id, data) VALUES (?, ?)", id, data)
 	if err != nil {
-		return 0, fmt.Errorf("failed to insert %w", err)
+		return 0, fmt.Errorf("failed to insert record: %w", err)
 
 	}
 	return res.LastInsertId()
 }
 
-func (s *SQLiteSyncStorage) ListChanges(ctx context.Context, sinceVersion int64) ([]StoredRecord, error) {
-	rows, err := s.db.Query("SELECT record_id, data, version FROM RECORDS WHERE version > ?", sinceVersion)
+func (s *SQLiteSyncStorage) ListChanges(ctx context.Context, sinceRevision int64) ([]StoredRecord, error) {
+	rows, err := s.db.Query("SELECT id, data, revision FROM records WHERE revision > ?", sinceRevision)
 	if err != nil {
-		return nil, fmt.Errorf("failed to query %w", err)
+		return nil, fmt.Errorf("failed to query records: %w", err)
 	}
 	defer rows.Close()
 
 	records := make([]StoredRecord, 0)
 	for rows.Next() {
 		record := StoredRecord{}
-		err = rows.Scan(&record.RecordID, &record.Data, &record.Version)
+		err = rows.Scan(&record.Id, &record.Data, &record.Revision)
 		if err != nil {
-			return nil, fmt.Errorf("failed to scan %w", err)
+			return nil, fmt.Errorf("failed to scan record: %w", err)
 		}
 		records = append(records, record)
 	}

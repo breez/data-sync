@@ -38,7 +38,7 @@ func (s *PersistentSyncerServer) SetRecord(ctx context.Context, msg *proto.SetRe
 	if err != nil {
 		return nil, err
 	}
-	newVersion, err := c.Value(middleware.USER_DB_CONTEXT_KEY).(*store.SQLiteSyncStorage).SetRecord(c, msg.Record.Id, msg.Record.Data, msg.Record.Version)
+	newRevision, err := c.Value(middleware.USER_DB_CONTEXT_KEY).(*store.SQLiteSyncStorage).SetRecord(c, msg.Record.Id, msg.Record.Data, msg.Record.Revision)
 	if err != nil {
 		if err == store.ErrSetConflict {
 			return &proto.SetRecordReply{
@@ -48,11 +48,11 @@ func (s *PersistentSyncerServer) SetRecord(ctx context.Context, msg *proto.SetRe
 		return nil, err
 	}
 	newRecord := msg.Record
-	newRecord.Version = newVersion
+	newRecord.Revision = newRevision
 	s.eventsManager.notifyChange(c.Value(middleware.USER_PUBKEY_CONTEXT_KEY).(string), newRecord)
 	return &proto.SetRecordReply{
-		Status:     proto.SetRecordStatus_SUCCESS,
-		NewVersion: newVersion,
+		Status:      proto.SetRecordStatus_SUCCESS,
+		NewRevision: newRevision,
 	}, nil
 }
 
@@ -61,16 +61,16 @@ func (s *PersistentSyncerServer) ListChanges(ctx context.Context, msg *proto.Lis
 	if err != nil {
 		return nil, err
 	}
-	changed, err := c.Value(middleware.USER_DB_CONTEXT_KEY).(*store.SQLiteSyncStorage).ListChanges(c, msg.SinceVersion)
+	changed, err := c.Value(middleware.USER_DB_CONTEXT_KEY).(*store.SQLiteSyncStorage).ListChanges(c, msg.SinceRevision)
 	if err != nil {
 		return nil, err
 	}
 	records := make([]*proto.Record, len(changed))
 	for i, r := range changed {
 		records[i] = &proto.Record{
-			Id:      r.RecordID,
-			Data:    r.Data,
-			Version: r.Version,
+			Id:       r.Id,
+			Data:     r.Data,
+			Revision: r.Revision,
 		}
 	}
 	return &proto.ListChangesReply{
@@ -82,21 +82,6 @@ func (s *PersistentSyncerServer) TrackChanges(request *proto.TrackChangesRequest
 	context, err := middleware.Authenticate(s.config, stream.Context(), request)
 	if err != nil {
 		return err
-	}
-
-	historyChanges, err := context.Value(middleware.USER_DB_CONTEXT_KEY).(*store.SQLiteSyncStorage).ListChanges(context, request.SinceVersion)
-	if err != nil {
-		return err
-	}
-	for _, r := range historyChanges {
-		record := &proto.Record{
-			Id:      r.RecordID,
-			Data:    r.Data,
-			Version: r.Version,
-		}
-		if err := stream.Send(record); err != nil {
-			return err
-		}
 	}
 
 	pubkey := context.Value(middleware.USER_PUBKEY_CONTEXT_KEY).(string)

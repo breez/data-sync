@@ -53,65 +53,33 @@ func TestTrackChanges(t *testing.T) {
 		os.RemoveAll(config.UsersDatabasesDir)
 	}()
 
-	expectedRecords := []*proto.Record{
-		{
-			Id:      "1",
-			Version: 0,
-			Data:    []byte("version1"),
-		},
-		{
-			Id:      "2",
-			Version: 0,
-			Data:    []byte("version1"),
-		},
-	}
-	client.SetRecord(context.Background(), createSetRecordRequest(t, privateKey, expectedRecords[0]))
-	client.SetRecord(context.Background(), createSetRecordRequest(t, privateKey, expectedRecords[1]))
-
-	requestTime := time.Now().Unix()
-	toSign := fmt.Sprintf("%v-%v", 0, requestTime)
+	requestTime := uint32(time.Now().Unix())
+	toSign := fmt.Sprintf("%v", requestTime)
 	signature, err := middleware.SignMessage(privateKey, []byte(toSign))
 	require.NoError(t, err, "failed to sign message")
 	request := &proto.TrackChangesRequest{
-		RequestTime:  requestTime,
-		Signature:    signature,
-		SinceVersion: 0,
+		RequestTime: requestTime,
+		Signature:   signature,
 	}
 	request.RequestTime = requestTime
 	request.Signature = signature
 	stream, err := client.TrackChanges(context.Background(), request)
 	require.NoError(t, err, "failed to call TrackChanges")
 
-	// check historical changes
-	var records []*proto.Record
-	for i := 0; i < 2; i++ {
-		record, err := stream.Recv()
-		require.NoError(t, err, "failed to receive record")
-		if err != nil {
-			break
-		}
-		records = append(records, record)
-		require.NotEqual(t, expectedRecords[i].Version, record.Version)
-		expectedRecords[i].Version = record.Version
-	}
-	res, _ := json.Marshal(records)
-	expected, _ := json.Marshal(expectedRecords)
-	require.Equal(t, string(res), string(expected), "failed to compare test results")
-
 	// check realtime changes
 	client.SetRecord(context.Background(), createSetRecordRequest(t, privateKey, &proto.Record{
-		Id:      expectedRecords[1].Id,
-		Version: expectedRecords[1].Version,
-		Data:    []byte("updated"),
+		Id:       "1",
+		Revision: 0,
+		Data:     []byte("revision1"),
 	}))
 	record, err := stream.Recv()
 	require.NoError(t, err, "failed to receive record")
-	require.Equal(t, record.Data, []byte("updated"))
+	require.Equal(t, record.Data, []byte("revision1"))
 }
 
 func createSetRecordRequest(t *testing.T, privateKey *btcec.PrivateKey, record *proto.Record) *proto.SetRecordRequest {
-	requestTime := time.Now().Unix()
-	toSign := fmt.Sprintf("%v-%v-%x-%v", record.Id, record.Version, record.Data, requestTime)
+	requestTime := uint32(time.Now().Unix())
+	toSign := fmt.Sprintf("%v-%x-%v-%v", record.Id, record.Data, record.Revision, requestTime)
 	signature, err := middleware.SignMessage(privateKey, []byte(toSign))
 	require.NoError(t, err, "failed to sign message")
 	return &proto.SetRecordRequest{
@@ -139,7 +107,7 @@ func testCases() []testCase {
 		{
 			name: "empty db, no changes",
 			request: &proto.ListChangesRequest{
-				SinceVersion: 0,
+				SinceRevision: 0,
 			},
 			reply: &proto.ListChangesReply{
 				Changes: []*proto.Record{},
@@ -151,14 +119,14 @@ func testCases() []testCase {
 			name: "initial record insert",
 			request: &proto.SetRecordRequest{
 				Record: &proto.Record{
-					Id:      "1",
-					Version: 0,
-					Data:    []byte("version1"),
+					Id:       "1",
+					Revision: 0,
+					Data:     []byte("revision1"),
 				},
 			},
 			reply: &proto.SetRecordReply{
-				Status:     proto.SetRecordStatus_SUCCESS,
-				NewVersion: 1,
+				Status:      proto.SetRecordStatus_SUCCESS,
+				NewRevision: 1,
 			},
 		},
 
@@ -167,14 +135,14 @@ func testCases() []testCase {
 			name: "initial record update",
 			request: &proto.SetRecordRequest{
 				Record: &proto.Record{
-					Id:      "1",
-					Version: 1,
-					Data:    []byte("version2"),
+					Id:       "1",
+					Revision: 1,
+					Data:     []byte("revision2"),
 				},
 			},
 			reply: &proto.SetRecordReply{
-				Status:     proto.SetRecordStatus_SUCCESS,
-				NewVersion: 2,
+				Status:      proto.SetRecordStatus_SUCCESS,
+				NewRevision: 2,
 			},
 		},
 
@@ -183,9 +151,9 @@ func testCases() []testCase {
 			name: "test conflict",
 			request: &proto.SetRecordRequest{
 				Record: &proto.Record{
-					Id:      "1",
-					Version: 1,
-					Data:    []byte("version3"),
+					Id:       "1",
+					Revision: 1,
+					Data:     []byte("revision3"),
 				},
 			},
 			reply: &proto.SetRecordReply{
@@ -193,11 +161,11 @@ func testCases() []testCase {
 			},
 		},
 
-		// no changes since version 5
+		// no changes since revision 5
 		{
 			name: "empty changes",
 			request: &proto.ListChangesRequest{
-				SinceVersion: 5,
+				SinceRevision: 5,
 			},
 			reply: &proto.ListChangesReply{
 				Changes: []*proto.Record{},
@@ -208,14 +176,14 @@ func testCases() []testCase {
 		{
 			name: "list changes returns 1 record",
 			request: &proto.ListChangesRequest{
-				SinceVersion: 0,
+				SinceRevision: 0,
 			},
 			reply: &proto.ListChangesReply{
 				Changes: []*proto.Record{
 					{
-						Id:      "1",
-						Version: 2,
-						Data:    []byte("version2"),
+						Id:       "1",
+						Revision: 2,
+						Data:     []byte("revision2"),
 					},
 				},
 			},
@@ -224,8 +192,8 @@ func testCases() []testCase {
 }
 
 func testSetRecord(t *testing.T, privateKey *btcec.PrivateKey, client proto.SyncerClient, request *proto.SetRecordRequest, test testCase) {
-	requestTime := time.Now().Unix()
-	toSign := fmt.Sprintf("%v-%v-%x-%v", request.Record.Id, request.Record.Version, request.Record.Data, requestTime)
+	requestTime := uint32(time.Now().Unix())
+	toSign := fmt.Sprintf("%v-%x-%v-%v", request.Record.Id, request.Record.Data, request.Record.Revision, requestTime)
 	signature, err := middleware.SignMessage(privateKey, []byte(toSign))
 	require.NoError(t, err, "failed to sign message")
 	request.RequestTime = requestTime
@@ -240,8 +208,8 @@ func testSetRecord(t *testing.T, privateKey *btcec.PrivateKey, client proto.Sync
 }
 
 func testListChanges(t *testing.T, privateKey *btcec.PrivateKey, client proto.SyncerClient, request *proto.ListChangesRequest, test testCase) {
-	requestTime := time.Now().Unix()
-	toSign := fmt.Sprintf("%v-%v", request.SinceVersion, requestTime)
+	requestTime := uint32(time.Now().Unix())
+	toSign := fmt.Sprintf("%v-%v", request.SinceRevision, requestTime)
 	signature, err := middleware.SignMessage(privateKey, []byte(toSign))
 	require.NoError(t, err, "failed to sign message")
 	request.RequestTime = requestTime
