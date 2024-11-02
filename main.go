@@ -23,6 +23,7 @@ func main() {
 	syncServer := NewPersistentSyncerServer(config)
 	syncServer.Start(quitChan)
 	s := CreateServer(config, grpcListener, syncServer)
+	log.Printf("Server listening at %s", config.GrpcListenAddress)
 	if err := s.Serve(grpcListener); err != nil {
 		log.Fatalf("failed to serve: %v", err)
 	}

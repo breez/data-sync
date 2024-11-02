@@ -23,26 +23,26 @@ const (
 
 var ErrInternalError = fmt.Errorf("internal error")
 var ErrInvalidSignature = fmt.Errorf("invalid signature")
-var SignedMsgPrefix = []byte("Lightning Signed Message:")
+var SignedMsgPrefix = []byte("realtimesync:")
 
 func Authenticate(config *config.Config, ctx context.Context, req interface{}) (context.Context, error) {
 	var toVerify string
 	var signature string
 	setRecordReq, ok := req.(*proto.SetRecordRequest)
 	if ok {
-		toVerify = fmt.Sprintf("%v-%v-%x-%v", setRecordReq.Record.Id, setRecordReq.Record.Version, setRecordReq.Record.Data, setRecordReq.RequestTime)
+		toVerify = SignSetRecord(setRecordReq.Record, setRecordReq.RequestTime)
 		signature = setRecordReq.Signature
 	}
 
 	listChangesReq, ok := req.(*proto.ListChangesRequest)
 	if ok {
-		toVerify = fmt.Sprintf("%v-%v", listChangesReq.SinceVersion, listChangesReq.RequestTime)
+		toVerify = fmt.Sprintf("%v-%v", listChangesReq.SinceRevision, listChangesReq.RequestTime)
 		signature = listChangesReq.Signature
 	}
 
 	trackChangesReq, ok := req.(*proto.TrackChangesRequest)
 	if ok {
-		toVerify = fmt.Sprintf("%v-%v", trackChangesReq.SinceVersion, trackChangesReq.RequestTime)
+		toVerify = fmt.Sprintf("%v", trackChangesReq.RequestTime)
 		signature = trackChangesReq.Signature
 	}
 
@@ -65,6 +65,17 @@ func Authenticate(config *config.Config, ctx context.Context, req interface{}) (
 	newContext := context.WithValue(ctx, USER_DB_CONTEXT_KEY, db)
 	newContext = context.WithValue(newContext, USER_PUBKEY_CONTEXT_KEY, hex.EncodeToString(pubkeyBytes))
 	return newContext, nil
+}
+
+func SignSetRecord(record *proto.Record, requestTime uint32) string {
+	return fmt.Sprintf(
+		"%v-%x-%v-%v-%v",
+		record.Id,
+		record.Data,
+		record.Revision,
+		record.SchemaVersion,
+		requestTime,
+	)
 }
 
 func SignMessage(key *btcec.PrivateKey, msg []byte) (string, error) {
