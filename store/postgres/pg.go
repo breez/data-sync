@@ -1,4 +1,4 @@
-package posgtres
+package postgres
 
 import (
 	"context"
