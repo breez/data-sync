@@ -20,7 +20,10 @@ func main() {
 	}
 
 	quitChan := make(chan struct{})
-	syncServer := NewPersistentSyncerServer(config)
+	syncServer, err := NewPersistentSyncerServer(config)
+	if err != nil {
+		log.Fatalf("failed to create sync server: %v", err)
+	}
 	syncServer.Start(quitChan)
 	s := CreateServer(config, grpcListener, syncServer)
 	log.Printf("Server listening at %s", config.GrpcListenAddress)

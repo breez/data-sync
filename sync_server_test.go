@@ -32,7 +32,7 @@ func TestSyncService(t *testing.T) {
 	client, closer := server(context.Background(), config)
 	defer closer()
 	defer func() {
-		os.RemoveAll(config.UsersDatabasesDir)
+		os.RemoveAll(config.SQLiteDirPath)
 	}()
 
 	for _, testCase := range testCases() {
@@ -50,7 +50,7 @@ func TestTrackChanges(t *testing.T) {
 	client, closer := server(context.Background(), config)
 	defer closer()
 	defer func() {
-		os.RemoveAll(config.UsersDatabasesDir)
+		os.RemoveAll(config.SQLiteDirPath)
 	}()
 
 	requestTime := uint32(time.Now().Unix())
@@ -96,7 +96,7 @@ func testParameters(t *testing.T) (*config.Config, *btcec.PrivateKey) {
 	}
 	privateKey, err := btcec.NewPrivateKey()
 	require.NoError(t, err, "failed to create private key")
-	os.RemoveAll(config.UsersDatabasesDir)
+	os.RemoveAll(config.SQLiteDirPath)
 	return config, privateKey
 }
 
@@ -228,7 +228,10 @@ func server(ctx context.Context, config *config.Config) (proto.SyncerClient, fun
 	lis := bufconn.Listen(buffer)
 
 	quitChan := make(chan struct{})
-	syncServer := NewPersistentSyncerServer(config)
+	syncServer, err := NewPersistentSyncerServer(config)
+	if err != nil {
+		log.Fatalf("failed to create sync server: %v", err)
+	}
 	syncServer.Start(quitChan)
 
 	baseServer := CreateServer(config, lis, syncServer)

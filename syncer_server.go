@@ -2,13 +2,17 @@ package main
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"log"
+	"os"
 	"sync"
 
 	"github.com/breez/data-sync/config"
 	"github.com/breez/data-sync/middleware"
 	"github.com/breez/data-sync/proto"
 	"github.com/breez/data-sync/store"
+	"github.com/breez/data-sync/store/sqlite"
 )
 
 type changeRecordEvent struct {
@@ -21,13 +25,34 @@ type PersistentSyncerServer struct {
 	sync.Mutex
 	config        *config.Config
 	eventsManager *eventsManager
+	storage       store.SyncStorage
 }
 
-func NewPersistentSyncerServer(config *config.Config) *PersistentSyncerServer {
+func NewPersistentSyncerServer(config *config.Config) (*PersistentSyncerServer, error) {
+
+	// We still don't support postgres
+	if config.PgDatabaseUrl != "" {
+		return nil, errors.New("not implemented")
+	}
+
+	// get sqlite file path and set default value if needed
+	sqliteFile := config.SQLiteDirPath
+	if sqliteFile == "" {
+		config.SQLiteDirPath = "db"
+	}
+	if err := os.MkdirAll(config.SQLiteDirPath, 0700); err != nil {
+		return nil, fmt.Errorf("failed to create databases directory %w", err)
+	}
+	file := fmt.Sprintf("%v/db.sqlite", config.SQLiteDirPath)
+	storage, err := sqlite.NewSQLiteSyncStorage(file)
+	if err != nil {
+		return nil, err
+	}
 	return &PersistentSyncerServer{
 		config:        config,
 		eventsManager: newEventsManager(),
-	}
+		storage:       storage,
+	}, nil
 }
 
 func (s *PersistentSyncerServer) Start(quitChan chan struct{}) {
@@ -39,7 +64,9 @@ func (s *PersistentSyncerServer) SetRecord(ctx context.Context, msg *proto.SetRe
 	if err != nil {
 		return nil, err
 	}
-	newRevision, err := c.Value(middleware.USER_DB_CONTEXT_KEY).(*store.SQLiteSyncStorage).SetRecord(c, msg.Record.Id, msg.Record.Data, msg.Record.Revision)
+	pubkey := c.Value(middleware.USER_PUBKEY_CONTEXT_KEY).(string)
+	newRevision, err := s.storage.SetRecord(c, pubkey, msg.Record.Id, msg.Record.Data, msg.Record.Revision)
+
 	if err != nil {
 		if err == store.ErrSetConflict {
 			return &proto.SetRecordReply{
@@ -62,7 +89,8 @@ func (s *PersistentSyncerServer) ListChanges(ctx context.Context, msg *proto.Lis
 	if err != nil {
 		return nil, err
 	}
-	changed, err := c.Value(middleware.USER_DB_CONTEXT_KEY).(*store.SQLiteSyncStorage).ListChanges(c, msg.SinceRevision)
+	pubkey := c.Value(middleware.USER_PUBKEY_CONTEXT_KEY).(string)
+	changed, err := s.storage.ListChanges(c, pubkey, msg.SinceRevision)
 	if err != nil {
 		return nil, err
 	}
