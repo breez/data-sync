@@ -15,9 +15,6 @@ func NewConfig() (*Config, error) {
 	if _, err := env.UnmarshalFromEnviron(&config); err != nil {
 		return nil, err
 	}
-	if config.PgDatabaseUrl == "" && config.SQLiteDirPath == "" {
-		config.SQLiteDirPath = "db"
-	}
 
 	return &config, nil
 }

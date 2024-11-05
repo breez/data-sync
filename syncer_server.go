@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"os"
@@ -28,6 +29,17 @@ type PersistentSyncerServer struct {
 }
 
 func NewPersistentSyncerServer(config *config.Config) (*PersistentSyncerServer, error) {
+
+	// We still don't support postgres
+	if config.PgDatabaseUrl != "" {
+		return nil, errors.New("not implemented")
+	}
+
+	// get sqlite file path and set default value if needed
+	sqliteFile := config.SQLiteDirPath
+	if sqliteFile == "" {
+		config.SQLiteDirPath = "db"
+	}
 	if err := os.MkdirAll(config.SQLiteDirPath, 0700); err != nil {
 		return nil, fmt.Errorf("failed to create databases directory %w", err)
 	}
