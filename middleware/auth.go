@@ -48,18 +48,7 @@ func Authenticate(config *config.Config, ctx context.Context, req interface{}) (
 		return nil, err
 	}
 
-	// dbDir := config.UsersDatabasesDir
 	pubkeyBytes := pubkey.SerializeCompressed()
-	// storeFile := fmt.Sprintf("%v/%v/%v/%v", dbDir,
-	// 	hex.EncodeToString(pubkeyBytes[0:1]),
-	// 	hex.EncodeToString(pubkeyBytes[1:2]),
-	// 	hex.EncodeToString(pubkeyBytes[2:]))
-	// db, err := store.Connect(storeFile)
-	// if err != nil {
-	// 	log.Printf("failed to connect to database file %v: %v", storeFile, err)
-	// 	return nil, ErrInternalError
-	// }
-	// newContext := context.WithValue(ctx, USER_DB_CONTEXT_KEY, db)
 	newContext := context.WithValue(ctx, USER_PUBKEY_CONTEXT_KEY, hex.EncodeToString(pubkeyBytes))
 	return newContext, nil
 }
