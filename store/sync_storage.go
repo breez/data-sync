@@ -13,6 +13,6 @@ type StoredRecord struct {
 	Revision int64
 }
 type SyncStorage interface {
-	SetRecord(ctx context.Context, storeID, id string, data []byte, existingRevision int64) (int64, error)
-	ListChanges(ctx context.Context, storeID string, sinceRevision int64) ([]StoredRecord, error)
+	SetRecord(ctx context.Context, userID, id string, data []byte, existingRevision int64) (int64, error)
+	ListChanges(ctx context.Context, userID string, sinceRevision int64) ([]StoredRecord, error)
 }
