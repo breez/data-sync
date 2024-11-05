@@ -9,7 +9,7 @@ import (
 )
 
 func TestAddRecords(t *testing.T) {
-	storage, err := NewPGSyncStorage("postgres://postgres:postgres@localhost:54321/data_sync?sslmode=disable")
+	storage, err := NewPGSyncStorage(os.Getenv("TEST_PG_DATABASE_URL"))
 	require.NoError(t, err, "failed to connect")
 
 	(&store.StoreTest{}).TestAddRecords(t, storage)
