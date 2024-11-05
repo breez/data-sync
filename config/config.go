@@ -6,7 +6,8 @@ import (
 
 type Config struct {
 	GrpcListenAddress string `env:"GRPC_LISTEN_ADDRESS"`
-	UsersDatabasesDir string `env:"USERS_DATABASES_DIR"`
+	SQLiteDirPath     string `env:"SQLITE_DIR_PATH"`
+	PgDatabaseUrl     string `env:"DATABASE_URL"`
 }
 
 func NewConfig() (*Config, error) {
@@ -14,8 +15,8 @@ func NewConfig() (*Config, error) {
 	if _, err := env.UnmarshalFromEnviron(&config); err != nil {
 		return nil, err
 	}
-	if config.UsersDatabasesDir == "" {
-		config.UsersDatabasesDir = "databases"
+	if config.PgDatabaseUrl == "" && config.SQLiteDirPath == "" {
+		config.SQLiteDirPath = "db"
 	}
 
 	return &config, nil
