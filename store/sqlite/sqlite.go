@@ -76,25 +76,25 @@ func (s *SQLiteSyncStorage) SetRecord(ctx context.Context, storeID, id string, d
 
 	// get the store's last revision
 	var newRevision int64
-	err = tx.QueryRow("SELECT revision FROM store_revisions WHERE store_id = ?", storeID).Scan(&newRevision)
+	err = tx.QueryRow("SELECT revision FROM store_revisions WHERE user_id = ?", storeID).Scan(&newRevision)
 	if err != sql.ErrNoRows {
 		if err != nil {
 			return 0, fmt.Errorf("failed to get store's latest revision: %w", err)
 		}
 	}
 	if newRevision == 0 {
-		err := tx.QueryRow("INSERT INTO store_revisions (store_id, revision) VALUES (?, ?) RETURNING revision", storeID, 1).Scan(&newRevision)
+		err := tx.QueryRow("INSERT INTO store_revisions (user_id, revision) VALUES (?, ?) RETURNING revision", storeID, 1).Scan(&newRevision)
 		if err != nil {
 			return 0, fmt.Errorf("failed to insert store's revision: %w", err)
 		}
 	} else {
-		err := tx.QueryRow("UPDATE store_revisions SET revision = revision + 1 WHERE store_id = ? RETURNING revision", storeID).Scan(&newRevision)
+		err := tx.QueryRow("UPDATE store_revisions SET revision = revision + 1 WHERE user_id = ? RETURNING revision", storeID).Scan(&newRevision)
 		if err != nil {
 			return 0, fmt.Errorf("failed to update store's revision: %w", err)
 		}
 	}
 
-	_, err = tx.Exec("INSERT OR REPLACE INTO records (store_id, id, data, revision) VALUES (?, ?, ?, ?) returning revision", storeID, id, data, newRevision)
+	_, err = tx.Exec("INSERT OR REPLACE INTO records (user_id, id, data, revision) VALUES (?, ?, ?, ?) returning revision", storeID, id, data, newRevision)
 	if err != nil {
 		return 0, fmt.Errorf("failed to insert record: %w", err)
 	}
@@ -106,7 +106,7 @@ func (s *SQLiteSyncStorage) SetRecord(ctx context.Context, storeID, id string, d
 
 func (s *SQLiteSyncStorage) ListChanges(ctx context.Context, storeID string, sinceRevision int64) ([]store.StoredRecord, error) {
 
-	rows, err := s.db.Query("SELECT id, data, revision FROM records WHERE store_id = ? AND revision > ?", storeID, sinceRevision)
+	rows, err := s.db.Query("SELECT id, data, revision FROM records WHERE user_id = ? AND revision > ?", storeID, sinceRevision)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query records: %w", err)
 	}
