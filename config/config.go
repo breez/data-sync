@@ -5,8 +5,8 @@ import (
 )
 
 type Config struct {
-	GrpcListenAddress string `env:"GRPC_LISTEN_ADDRESS"`
-	SQLiteDirPath     string `env:"SQLITE_DIR_PATH"`
+	GrpcListenAddress string `env:"GRPC_LISTEN_ADDRESS,default=0.0.0.0:8080"`
+	SQLiteDirPath     string `env:"SQLITE_DIR_PATH,default=db"`
 	PgDatabaseUrl     string `env:"DATABASE_URL"`
 }
 
