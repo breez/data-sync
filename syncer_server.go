@@ -34,16 +34,13 @@ func NewPersistentSyncerServer(config *config.Config) (*PersistentSyncerServer, 
 	var err error
 
 	if config.PgDatabaseUrl != "" {
+		log.Printf("creating postgres storage: %v\n", config.PgDatabaseUrl)
 		storage, err = postgres.NewPGSyncStorage(config.PgDatabaseUrl)
 		if err != nil {
 			return nil, err
 		}
 	} else {
-		// get sqlite file path and set default value if needed
-		sqliteFile := config.SQLiteDirPath
-		if sqliteFile == "" {
-			config.SQLiteDirPath = "db"
-		}
+		log.Printf("creating sqlite storage: %v\n", config.SQLiteDirPath)
 		if err := os.MkdirAll(config.SQLiteDirPath, 0700); err != nil {
 			return nil, fmt.Errorf("failed to create databases directory %w", err)
 		}
