@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"log"
 	"os"
@@ -12,6 +11,7 @@ import (
 	"github.com/breez/data-sync/middleware"
 	"github.com/breez/data-sync/proto"
 	"github.com/breez/data-sync/store"
+	"github.com/breez/data-sync/store/postgres"
 	"github.com/breez/data-sync/store/sqlite"
 )
 
@@ -30,24 +30,30 @@ type PersistentSyncerServer struct {
 
 func NewPersistentSyncerServer(config *config.Config) (*PersistentSyncerServer, error) {
 
-	// We still don't support postgres
+	var storage store.SyncStorage
+	var err error
+
 	if config.PgDatabaseUrl != "" {
-		return nil, errors.New("not implemented")
+		storage, err = postgres.NewPGSyncStorage(config.PgDatabaseUrl)
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		// get sqlite file path and set default value if needed
+		sqliteFile := config.SQLiteDirPath
+		if sqliteFile == "" {
+			config.SQLiteDirPath = "db"
+		}
+		if err := os.MkdirAll(config.SQLiteDirPath, 0700); err != nil {
+			return nil, fmt.Errorf("failed to create databases directory %w", err)
+		}
+		file := fmt.Sprintf("%v/db.sqlite", config.SQLiteDirPath)
+		storage, err = sqlite.NewSQLiteSyncStorage(file)
+		if err != nil {
+			return nil, err
+		}
 	}
 
-	// get sqlite file path and set default value if needed
-	sqliteFile := config.SQLiteDirPath
-	if sqliteFile == "" {
-		config.SQLiteDirPath = "db"
-	}
-	if err := os.MkdirAll(config.SQLiteDirPath, 0700); err != nil {
-		return nil, fmt.Errorf("failed to create databases directory %w", err)
-	}
-	file := fmt.Sprintf("%v/db.sqlite", config.SQLiteDirPath)
-	storage, err := sqlite.NewSQLiteSyncStorage(file)
-	if err != nil {
-		return nil, err
-	}
 	return &PersistentSyncerServer{
 		config:        config,
 		eventsManager: newEventsManager(),
