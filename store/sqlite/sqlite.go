@@ -59,7 +59,7 @@ func NewSQLiteSyncStorage(file string) (*SQLiteSyncStorage, error) {
 	return &SQLiteSyncStorage{db: db}, nil
 }
 
-func (s *SQLiteSyncStorage) SetRecord(ctx context.Context, userID, id string, data []byte, existingRevision int64) (int64, error) {
+func (s *SQLiteSyncStorage) SetRecord(ctx context.Context, userID, id string, data []byte, existingRevision uint64, schemaVersion string) (uint64, error) {
 
 	tx, err := s.db.BeginTx(context.Background(), &sql.TxOptions{
 		Isolation: sql.LevelSerializable,
@@ -70,7 +70,7 @@ func (s *SQLiteSyncStorage) SetRecord(ctx context.Context, userID, id string, da
 	defer tx.Rollback()
 
 	// check that the existing revision is the same as the one we expect
-	var revision int64
+	var revision uint64
 	err = tx.QueryRow("SELECT revision FROM records WHERE user_id = ? AND id = ?", userID, id).Scan(&revision)
 	if err != sql.ErrNoRows {
 		if err != nil {
@@ -82,7 +82,7 @@ func (s *SQLiteSyncStorage) SetRecord(ctx context.Context, userID, id string, da
 	}
 
 	// get the store's last revision
-	var newRevision int64
+	var newRevision uint64
 	err = tx.QueryRow("SELECT revision FROM user_revisions WHERE user_id = ?", userID).Scan(&newRevision)
 	if err != sql.ErrNoRows {
 		if err != nil {
@@ -101,7 +101,7 @@ func (s *SQLiteSyncStorage) SetRecord(ctx context.Context, userID, id string, da
 		}
 	}
 
-	_, err = tx.Exec("INSERT OR REPLACE INTO records (user_id, id, data, revision) VALUES (?, ?, ?, ?) returning revision", userID, id, data, newRevision)
+	_, err = tx.Exec("INSERT OR REPLACE INTO records (user_id, id, data, revision, schema_version) VALUES (?, ?, ?, ?, ?) returning revision", userID, id, data, newRevision, schemaVersion)
 	if err != nil {
 		return 0, fmt.Errorf("failed to insert record: %w", err)
 	}
@@ -111,9 +111,9 @@ func (s *SQLiteSyncStorage) SetRecord(ctx context.Context, userID, id string, da
 	return newRevision, nil
 }
 
-func (s *SQLiteSyncStorage) ListChanges(ctx context.Context, userID string, sinceRevision int64) ([]store.StoredRecord, error) {
+func (s *SQLiteSyncStorage) ListChanges(ctx context.Context, userID string, sinceRevision uint64) ([]store.StoredRecord, error) {
 
-	rows, err := s.db.Query("SELECT id, data, revision FROM records WHERE user_id = ? AND revision > ?", userID, sinceRevision)
+	rows, err := s.db.Query("SELECT id, data, revision, schema_version FROM records WHERE user_id = ? AND revision > ?", userID, sinceRevision)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query records: %w", err)
 	}
@@ -122,7 +122,7 @@ func (s *SQLiteSyncStorage) ListChanges(ctx context.Context, userID string, sinc
 	records := make([]store.StoredRecord, 0)
 	for rows.Next() {
 		record := store.StoredRecord{}
-		err = rows.Scan(&record.Id, &record.Data, &record.Revision)
+		err = rows.Scan(&record.Id, &record.Data, &record.Revision, &record.SchemaVersion)
 		if err != nil {
 			return nil, fmt.Errorf("failed to scan record: %w", err)
 		}

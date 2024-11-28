@@ -11,8 +11,8 @@ service Syncer {
 
 message Record {
   string id = 1;
-  int64 revision = 2;
-  float schema_version = 3;
+  uint64 revision = 2;
+  string schema_version = 3;
   bytes data = 4;
 }
 
@@ -27,11 +27,11 @@ enum SetRecordStatus {
 }
 message SetRecordReply {
   SetRecordStatus status = 1;
-  int64 new_revision = 2;
+  uint64 new_revision = 2;
 }
 
 message ListChangesRequest {
-  int64 since_revision = 1;
+  uint64 since_revision = 1;
   uint32 request_time = 2;
   string signature = 3;
 }
