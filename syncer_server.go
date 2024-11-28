@@ -68,7 +68,7 @@ func (s *PersistentSyncerServer) SetRecord(ctx context.Context, msg *proto.SetRe
 		return nil, err
 	}
 	pubkey := c.Value(middleware.USER_PUBKEY_CONTEXT_KEY).(string)
-	newRevision, err := s.storage.SetRecord(c, pubkey, msg.Record.Id, msg.Record.Data, msg.Record.Revision)
+	newRevision, err := s.storage.SetRecord(c, pubkey, msg.Record.Id, msg.Record.Data, msg.Record.Revision, msg.Record.SchemaVersion)
 
 	if err != nil {
 		if err == store.ErrSetConflict {
@@ -100,9 +100,10 @@ func (s *PersistentSyncerServer) ListChanges(ctx context.Context, msg *proto.Lis
 	records := make([]*proto.Record, len(changed))
 	for i, r := range changed {
 		records[i] = &proto.Record{
-			Id:       r.Id,
-			Data:     r.Data,
-			Revision: r.Revision,
+			Id:            r.Id,
+			Data:          r.Data,
+			Revision:      r.Revision,
+			SchemaVersion: r.SchemaVersion,
 		}
 	}
 	return &proto.ListChangesReply{

@@ -13,13 +13,13 @@ type StoreTest struct{}
 func (s *StoreTest) TestAddRecords(t *testing.T, storage SyncStorage) {
 
 	testStoreID := uuid.New().String()
-	newRevision, err := storage.SetRecord(context.Background(), testStoreID, "a1", []byte("data1"), 0)
+	newRevision, err := storage.SetRecord(context.Background(), testStoreID, "a1", []byte("data1"), 0, "0.0.1")
 	require.NoError(t, err, "failed to call SetRecord a1")
-	require.Equal(t, newRevision, int64(1))
+	require.Equal(t, newRevision, uint64(1))
 
-	newRevision, err = storage.SetRecord(context.Background(), testStoreID, "a2", []byte("data2"), 0)
+	newRevision, err = storage.SetRecord(context.Background(), testStoreID, "a2", []byte("data2"), 0, "0.0.1")
 	require.NoError(t, err, "failed to call SetRecord a2")
-	require.Equal(t, newRevision, int64(2))
+	require.Equal(t, newRevision, uint64(2))
 
 	records, err := storage.ListChanges(context.Background(), testStoreID, 0)
 	require.NoError(t, err, "failed to call list changes")
@@ -30,20 +30,20 @@ func (s *StoreTest) TestAddRecords(t *testing.T, storage SyncStorage) {
 
 	// Test different store with same id
 	anotherStoreID := uuid.New().String()
-	newRev, err := storage.SetRecord(context.Background(), anotherStoreID, "a1", []byte("data1"), 0)
+	newRev, err := storage.SetRecord(context.Background(), anotherStoreID, "a1", []byte("data1"), 0, "0.0.1")
 	require.NoError(t, err, "failed to call SetRecord a1")
-	require.Equal(t, newRev, int64(1))
+	require.Equal(t, newRev, uint64(1))
 }
 
 func (s *StoreTest) TestUpdateRecords(t *testing.T, storage SyncStorage) {
 	testStoreID := uuid.New().String()
-	newRevision, err := storage.SetRecord(context.Background(), testStoreID, "a1", []byte("data1"), 0)
+	newRevision, err := storage.SetRecord(context.Background(), testStoreID, "a1", []byte("data1"), 0, "0.0.1")
 	require.NoError(t, err, "failed to call SetRecord a1")
-	require.Equal(t, newRevision, int64(1))
+	require.Equal(t, newRevision, uint64(1))
 
-	newRevision, err = storage.SetRecord(context.Background(), testStoreID, "a1", []byte("data2"), 1)
+	newRevision, err = storage.SetRecord(context.Background(), testStoreID, "a1", []byte("data2"), 1, "0.0.1")
 	require.NoError(t, err, "failed to call SetRecord a2")
-	require.Equal(t, newRevision, int64(2))
+	require.Equal(t, newRevision, uint64(2))
 
 	records, err := storage.ListChanges(context.Background(), testStoreID, 0)
 	require.NoError(t, err, "failed to call list changes")
@@ -54,11 +54,11 @@ func (s *StoreTest) TestUpdateRecords(t *testing.T, storage SyncStorage) {
 
 func (s *StoreTest) TestConflict(t *testing.T, storage SyncStorage) {
 	testStoreID := uuid.New().String()
-	newRevision, err := storage.SetRecord(context.Background(), testStoreID, "a1", []byte("data1"), 0)
+	newRevision, err := storage.SetRecord(context.Background(), testStoreID, "a1", []byte("data1"), 0, "0.0.1")
 	require.NoError(t, err, "failed to call SetRecord a1")
-	require.Equal(t, newRevision, int64(1))
+	require.Equal(t, newRevision, uint64(1))
 
-	_, err = storage.SetRecord(context.Background(), testStoreID, "a1", []byte("data2"), 0)
+	_, err = storage.SetRecord(context.Background(), testStoreID, "a1", []byte("data2"), 0, "0.0.1")
 	require.Error(t, err, "should have return with error")
 	require.Equal(t, err, ErrSetConflict)
 }
