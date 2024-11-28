@@ -3,6 +3,7 @@ package postgres
 import (
 	"context"
 	"database/sql"
+	"embed"
 	"fmt"
 
 	"github.com/breez/data-sync/store"
@@ -10,10 +11,14 @@ import (
 	"github.com/golang-migrate/migrate/v4"
 	pgxmigrate "github.com/golang-migrate/migrate/v4/database/pgx"
 	_ "github.com/golang-migrate/migrate/v4/source/file"
+	"github.com/golang-migrate/migrate/v4/source/iofs"
 	_ "github.com/golang-migrate/migrate/v4/source/pkger"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
+
+//go:embed migrations/*.sql
+var migrationFS embed.FS
 
 type PgSyncStorage struct {
 	db *pgxpool.Pool
@@ -30,8 +35,13 @@ func NewPGSyncStorage(databaseURL string) (*PgSyncStorage, error) {
 		return nil, fmt.Errorf("failed to create migration driver %w", err)
 	}
 
-	m, err := migrate.NewWithDatabaseInstance(
-		"pkger:///store/postgres/migrations",
+	migrationDriver, err := iofs.New(migrationFS, "migrations")
+	if err != nil {
+		return nil, fmt.Errorf("failed to create migration driver %w", err)
+	}
+
+	m, err := migrate.NewWithInstance(
+		"iofs", migrationDriver,
 		"data-sync", driver)
 	if err != nil {
 		return nil, fmt.Errorf("failed to instantiate migrations %w", err)

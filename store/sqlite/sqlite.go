@@ -3,21 +3,23 @@ package sqlite
 import (
 	"context"
 	"database/sql"
+	"embed"
 	"errors"
 	"fmt"
 	"os"
 
 	"github.com/breez/data-sync/store"
-	"github.com/markbates/pkger"
 
 	"github.com/golang-migrate/migrate/v4"
 	"github.com/golang-migrate/migrate/v4/database/sqlite3"
 	_ "github.com/golang-migrate/migrate/v4/source/file"
+	"github.com/golang-migrate/migrate/v4/source/iofs"
 	_ "github.com/golang-migrate/migrate/v4/source/pkger"
 	_ "github.com/mattn/go-sqlite3"
 )
 
-var _ = pkger.Include("/store/migrations")
+//go:embed migrations/*.sql
+var migrationFS embed.FS
 
 type SQLiteSyncStorage struct {
 	db *sql.DB
@@ -38,8 +40,13 @@ func NewSQLiteSyncStorage(file string) (*SQLiteSyncStorage, error) {
 		return nil, fmt.Errorf("failed to create migration driver %w", err)
 	}
 
-	m, err := migrate.NewWithDatabaseInstance(
-		"pkger:///store/sqlite/migrations",
+	migrationDriver, err := iofs.New(migrationFS, "migrations")
+	if err != nil {
+		return nil, fmt.Errorf("failed to create migration driver %w", err)
+	}
+
+	m, err := migrate.NewWithInstance(
+		"iofs", migrationDriver,
 		file, driver)
 	if err != nil {
 		return nil, fmt.Errorf("failed to instantiate migrations %w", err)
