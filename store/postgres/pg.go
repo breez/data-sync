@@ -79,16 +79,39 @@ func (s *PgSyncStorage) SetRecord(ctx context.Context, userID, id string, data [
 	}
 
 	// get the store's last revision
-	var newRevision uint64
-	err = tx.QueryRow(ctx, "INSERT INTO user_revisions (user_id, revision) VALUES ($1, 1) ON CONFLICT(user_id, revision) DO UPDATE SET revision=user_revisions.revision + 1 RETURNING revision", userID).Scan(&newRevision)
-	if err != nil {
-		return 0, fmt.Errorf("failed to set store's latest revision: %w", err)
+	var newRevision uint64 = 0
+	err = tx.QueryRow(ctx, "SELECT revision FROM user_revisions WHERE user_id = $1", userID).Scan(&newRevision)
+	if err != pgx.ErrNoRows {
+		if err != nil {
+			return 0, fmt.Errorf("failed to get store's latest revision: %w", err)
+		}
+	}
+	if newRevision == 0 {
+		err := tx.QueryRow(ctx, "INSERT INTO user_revisions (user_id, revision) VALUES ($1, $2) RETURNING revision", userID, 1).Scan(&newRevision)
+		if err != nil {
+			return 0, fmt.Errorf("failed to insert store's revision: %w", err)
+		}
+	} else {
+		err := tx.QueryRow(ctx, "UPDATE user_revisions SET revision = revision + 1 WHERE user_id = $1 RETURNING revision", userID).Scan(&newRevision)
+		if err != nil {
+			return 0, fmt.Errorf("failed to update store's revision: %w", err)
+		}
 	}
 
-	_, err = tx.Exec(ctx, "INSERT INTO records (user_id, id, data, revision, schema_version) VALUES ($1, $2, $3, $4, $5) ON CONFLICT (user_id, id) DO UPDATE SET data=EXCLUDED.data, revision=EXCLUDED.revision RETURNING revision", userID, id, data, newRevision, schemaVersion)
+	_, err = tx.Exec(ctx, `
+		INSERT INTO records (user_id, id, data, revision, schema_version) 
+		VALUES ($1, $2, $3, $4, $5) 
+		ON CONFLICT (user_id, id) DO UPDATE SET 
+			data=EXCLUDED.data, 
+			revision=EXCLUDED.revision, 
+			schema_version=EXCLUDED.schema_version 
+		RETURNING revision`,
+		userID, id, data, newRevision, schemaVersion,
+	)
 	if err != nil {
 		return 0, fmt.Errorf("failed to insert record: %w", err)
 	}
+
 	if err := tx.Commit(ctx); err != nil {
 		return 0, fmt.Errorf("failed to commit transaction: %w", err)
 	}
