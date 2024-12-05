@@ -3,8 +3,11 @@ package middleware
 import (
 	"context"
 	"crypto/sha256"
+	"crypto/x509"
+	"encoding/base64"
 	"encoding/hex"
 	"fmt"
+	"strings"
 
 	"github.com/breez/data-sync/config"
 	"github.com/breez/data-sync/proto"
@@ -12,6 +15,7 @@ import (
 	"github.com/btcsuite/btcd/btcec/v2/ecdsa"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/tv42/zbase32"
+	"google.golang.org/grpc/metadata"
 )
 
 const (
@@ -22,7 +26,49 @@ var ErrInternalError = fmt.Errorf("internal error")
 var ErrInvalidSignature = fmt.Errorf("invalid signature")
 var SignedMsgPrefix = []byte("realtimesync:")
 
+func checkApiKey(config *config.Config, ctx context.Context, req interface{}) error {
+	md, ok := metadata.FromIncomingContext(ctx)
+	if !ok {
+		return fmt.Errorf("Could not read request metadata")
+	}
+
+	authHeader := md.Get("Authorization")[0]
+	if len(authHeader) <= 7 || !strings.HasPrefix(authHeader, "Bearer ") {
+		return fmt.Errorf("Invalid auth header")
+	}
+
+	apiKey := authHeader[7:]
+	block, err := base64.StdEncoding.DecodeString(apiKey)
+	if err != nil {
+		return fmt.Errorf("Could not decode auth header: %v", err)
+	}
+
+	cert, err := x509.ParseCertificate(block)
+	if err != nil {
+		return fmt.Errorf("Could not parse certificate: %v", err)
+	}
+
+	rootPool := x509.NewCertPool()
+	rootPool.AddCert(config.CACert)
+
+	chains, err := cert.Verify(x509.VerifyOptions{
+		Roots: rootPool,
+	})
+	if err != nil {
+		return fmt.Errorf("Certificate verification error: %v", err)
+	}
+	if len(chains) != 1 || len(chains[0]) != 2 || !chains[0][0].Equal(cert) || !chains[0][1].Equal(config.CACert) {
+		return fmt.Errorf("Certificate verification error: invalid chain of trust")
+	}
+
+	return nil
+}
+
 func Authenticate(config *config.Config, ctx context.Context, req interface{}) (context.Context, error) {
+	if err := checkApiKey(config, ctx, req); err != nil {
+		return nil, err
+	}
+
 	var toVerify string
 	var signature string
 	setRecordReq, ok := req.(*proto.SetRecordRequest)
