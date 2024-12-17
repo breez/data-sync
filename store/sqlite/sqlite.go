@@ -64,7 +64,7 @@ func (s *SQLiteSyncStorage) SetRecord(ctx context.Context, userID, id string, da
 
 	// check that the existing revision is the same as the one we expect
 	var revision int64
-	err = tx.QueryRow("SELECT revision FROM records WHERE id = ?", id).Scan(&revision)
+	err = tx.QueryRow("SELECT revision FROM records WHERE user_id = ? AND id = ?", userID, id).Scan(&revision)
 	if err != sql.ErrNoRows {
 		if err != nil {
 			return 0, fmt.Errorf("failed to get record's latest revision: %w", err)
