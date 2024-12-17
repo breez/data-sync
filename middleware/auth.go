@@ -27,6 +27,10 @@ var ErrInvalidSignature = fmt.Errorf("invalid signature")
 var SignedMsgPrefix = []byte("realtimesync:")
 
 func checkApiKey(config *config.Config, ctx context.Context, req interface{}) error {
+	if config.CACert == nil {
+		return nil
+	}
+
 	md, ok := metadata.FromIncomingContext(ctx)
 	if !ok {
 		return fmt.Errorf("Could not read request metadata")

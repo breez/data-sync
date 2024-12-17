@@ -10,10 +10,10 @@ import (
 )
 
 type Config struct {
-	GrpcListenAddress string `env:"GRPC_LISTEN_ADDRESS,default=0.0.0.0:8080"`
-	SQLiteDirPath     string `env:"SQLITE_DIR_PATH,default=db"`
-	PgDatabaseUrl     string `env:"DATABASE_URL"`
-	CACertPath        string `env:"CA_CERT_PATH"`
+	GrpcListenAddress string  `env:"GRPC_LISTEN_ADDRESS,default=0.0.0.0:8080"`
+	SQLiteDirPath     string  `env:"SQLITE_DIR_PATH,default=db"`
+	PgDatabaseUrl     string  `env:"DATABASE_URL"`
+	CACertPath        *string `env:"CA_CERT_PATH"`
 	CACert            *x509.Certificate
 }
 
@@ -41,7 +41,9 @@ func NewConfig() (*Config, error) {
 	if _, err := env.UnmarshalFromEnviron(&config); err != nil {
 		return nil, err
 	}
-	config.CACert = initializeCACert(config.CACertPath)
+	if config.CACertPath != nil {
+		config.CACert = initializeCACert(*config.CACertPath)
+	}
 
 	return &config, nil
 }
