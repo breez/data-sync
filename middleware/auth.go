@@ -27,7 +27,7 @@ var ErrInvalidSignature = fmt.Errorf("invalid signature")
 var SignedMsgPrefix = []byte("realtimesync:")
 
 func checkApiKey(config *config.Config, ctx context.Context, req interface{}) error {
-	if config.CACert == nil {
+	if config.CACert.Raw == nil {
 		return nil
 	}
 
@@ -53,7 +53,7 @@ func checkApiKey(config *config.Config, ctx context.Context, req interface{}) er
 	}
 
 	rootPool := x509.NewCertPool()
-	rootPool.AddCert(config.CACert)
+	rootPool.AddCert(config.CACert.Raw)
 
 	chains, err := cert.Verify(x509.VerifyOptions{
 		Roots: rootPool,
@@ -61,7 +61,7 @@ func checkApiKey(config *config.Config, ctx context.Context, req interface{}) er
 	if err != nil {
 		return fmt.Errorf("Certificate verification error: %v", err)
 	}
-	if len(chains) != 1 || len(chains[0]) != 2 || !chains[0][0].Equal(cert) || !chains[0][1].Equal(config.CACert) {
+	if len(chains) != 1 || len(chains[0]) != 2 || !chains[0][0].Equal(cert) || !chains[0][1].Equal(config.CACert.Raw) {
 		return fmt.Errorf("Certificate verification error: invalid chain of trust")
 	}
 
