@@ -2,6 +2,7 @@ package config
 
 import (
 	"crypto/x509"
+	"encoding/base64"
 	"encoding/pem"
 	"log"
 
@@ -13,7 +14,12 @@ type Certificate struct {
 }
 
 func (c *Certificate) UnmarshalEnvironmentValue(data string) error {
-	CACertBlock, _ := pem.Decode([]byte(data))
+	decodedData, err := base64.StdEncoding.DecodeString(data)
+	if err != nil {
+		log.Fatal("Could not decode base64-encoded certificate:", err)
+	}
+
+	CACertBlock, _ := pem.Decode(decodedData)
 	if CACertBlock == nil {
 		log.Fatal("CA certificate is invalid")
 	}
