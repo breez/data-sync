@@ -3,7 +3,6 @@ package config
 import (
 	"crypto/x509"
 	"encoding/base64"
-	"encoding/pem"
 	"log"
 
 	"github.com/Netflix/go-env"
@@ -14,19 +13,14 @@ type Certificate struct {
 }
 
 func (c *Certificate) UnmarshalEnvironmentValue(data string) error {
-	decodedData, err := base64.StdEncoding.DecodeString(data)
+	CACertBlock, err := base64.StdEncoding.DecodeString(data)
 	if err != nil {
-		log.Fatal("Could not decode base64-encoded certificate:", err)
+		log.Fatal("Could not decode certificate base64 body: ", err)
 	}
 
-	CACertBlock, _ := pem.Decode(decodedData)
-	if CACertBlock == nil {
-		log.Fatal("CA certificate is invalid")
-	}
-
-	CACert, err := x509.ParseCertificate(CACertBlock.Bytes)
+	CACert, err := x509.ParseCertificate(CACertBlock)
 	if err != nil {
-		log.Fatal("Could not parse CA cert:", err)
+		log.Fatal("Could not parse CA cert: ", err)
 	}
 
 	c.Raw = CACert
