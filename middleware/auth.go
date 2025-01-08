@@ -26,30 +26,34 @@ var ErrInternalError = fmt.Errorf("internal error")
 var ErrInvalidSignature = fmt.Errorf("invalid signature")
 var SignedMsgPrefix = []byte("realtimesync:")
 
-func checkApiKey(config *config.Config, ctx context.Context, req interface{}) error {
+func checkApiKey(config *config.Config, ctx context.Context, _ interface{}) error {
 	if config.CACert.Raw == nil {
 		return nil
 	}
 
 	md, ok := metadata.FromIncomingContext(ctx)
 	if !ok {
-		return fmt.Errorf("Could not read request metadata")
+		return fmt.Errorf("could not read request metadata")
 	}
 
-	authHeader := md.Get("Authorization")[0]
+	authHeaders := md.Get("Authorization")
+	if len(authHeaders) == 0 {
+		return fmt.Errorf("invalid auth header")
+	}
+	authHeader := authHeaders[0]
 	if len(authHeader) <= 7 || !strings.HasPrefix(authHeader, "Bearer ") {
-		return fmt.Errorf("Invalid auth header")
+		return fmt.Errorf("invalid auth header")
 	}
 
 	apiKey := authHeader[7:]
 	block, err := base64.StdEncoding.DecodeString(apiKey)
 	if err != nil {
-		return fmt.Errorf("Could not decode auth header: %v", err)
+		return fmt.Errorf("could not decode auth header: %v", err)
 	}
 
 	cert, err := x509.ParseCertificate(block)
 	if err != nil {
-		return fmt.Errorf("Could not parse certificate: %v", err)
+		return fmt.Errorf("could not parse certificate: %v", err)
 	}
 
 	rootPool := x509.NewCertPool()
@@ -59,10 +63,10 @@ func checkApiKey(config *config.Config, ctx context.Context, req interface{}) er
 		Roots: rootPool,
 	})
 	if err != nil {
-		return fmt.Errorf("Certificate verification error: %v", err)
+		return fmt.Errorf("certificate verification error: %v", err)
 	}
 	if len(chains) != 1 || len(chains[0]) != 2 || !chains[0][0].Equal(cert) || !chains[0][1].Equal(config.CACert.Raw) {
-		return fmt.Errorf("Certificate verification error: invalid chain of trust")
+		return fmt.Errorf("certificate verification error: invalid chain of trust")
 	}
 
 	return nil
