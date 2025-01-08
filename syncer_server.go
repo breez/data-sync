@@ -88,11 +88,13 @@ func (s *PersistentSyncerServer) SetRecord(ctx context.Context, msg *proto.SetRe
 }
 
 func (s *PersistentSyncerServer) ListChanges(ctx context.Context, msg *proto.ListChangesRequest) (*proto.ListChangesReply, error) {
+	log.Println("ListChanges: started")
 	c, err := middleware.Authenticate(s.config, ctx, msg)
 	if err != nil {
 		return nil, err
 	}
 	pubkey := c.Value(middleware.USER_PUBKEY_CONTEXT_KEY).(string)
+	log.Printf("ListChanges: pubkey: %v\n", pubkey)
 	changed, err := s.storage.ListChanges(c, pubkey, msg.SinceRevision)
 	if err != nil {
 		return nil, err
@@ -106,6 +108,7 @@ func (s *PersistentSyncerServer) ListChanges(ctx context.Context, msg *proto.Lis
 			SchemaVersion: r.SchemaVersion,
 		}
 	}
+	log.Println("ListChanges: ended")
 	return &proto.ListChangesReply{
 		Changes: records,
 	}, nil
