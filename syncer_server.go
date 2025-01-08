@@ -63,11 +63,14 @@ func (s *PersistentSyncerServer) Start(quitChan chan struct{}) {
 }
 
 func (s *PersistentSyncerServer) SetRecord(ctx context.Context, msg *proto.SetRecordRequest) (*proto.SetRecordReply, error) {
+	log.Println("SetRecord: started")
 	c, err := middleware.Authenticate(s.config, ctx, msg)
 	if err != nil {
+		log.Printf("SetRecord completed with auth error: %v\n", err)
 		return nil, err
 	}
 	pubkey := c.Value(middleware.USER_PUBKEY_CONTEXT_KEY).(string)
+	log.Printf("SetRecord: pubkey: %v\n", pubkey)
 	newRevision, err := s.storage.SetRecord(c, pubkey, msg.Record.Id, msg.Record.Data, msg.Record.Revision, msg.Record.SchemaVersion)
 
 	if err != nil {
@@ -81,6 +84,7 @@ func (s *PersistentSyncerServer) SetRecord(ctx context.Context, msg *proto.SetRe
 	newRecord := msg.Record
 	newRecord.Revision = newRevision
 	s.eventsManager.notifyChange(c.Value(middleware.USER_PUBKEY_CONTEXT_KEY).(string), newRecord)
+	log.Println("SetRecord: finished")
 	return &proto.SetRecordReply{
 		Status:      proto.SetRecordStatus_SUCCESS,
 		NewRevision: newRevision,
@@ -91,6 +95,7 @@ func (s *PersistentSyncerServer) ListChanges(ctx context.Context, msg *proto.Lis
 	log.Println("ListChanges: started")
 	c, err := middleware.Authenticate(s.config, ctx, msg)
 	if err != nil {
+		log.Printf("ListChanges completed with auth error: %v\n", err)
 		return nil, err
 	}
 	pubkey := c.Value(middleware.USER_PUBKEY_CONTEXT_KEY).(string)
@@ -108,7 +113,7 @@ func (s *PersistentSyncerServer) ListChanges(ctx context.Context, msg *proto.Lis
 			SchemaVersion: r.SchemaVersion,
 		}
 	}
-	log.Println("ListChanges: ended")
+	log.Printf("ListChanges: finished with %v records\n", len(records))
 	return &proto.ListChangesReply{
 		Changes: records,
 	}, nil
