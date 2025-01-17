@@ -3,10 +3,12 @@ package main
 import (
 	"log"
 	"net"
+	"time"
 
 	"github.com/breez/data-sync/config"
 	"github.com/breez/data-sync/proto"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/keepalive"
 )
 
 func main() {
@@ -33,7 +35,12 @@ func main() {
 }
 
 func CreateServer(config *config.Config, listener net.Listener, syncServer proto.SyncerServer) *grpc.Server {
-	s := grpc.NewServer()
+	s := grpc.NewServer(
+		grpc.KeepaliveEnforcementPolicy(keepalive.EnforcementPolicy{
+			MinTime:             time.Second * 5,
+			PermitWithoutStream: true,
+		}),
+	)
 	proto.RegisterSyncerServer(s, syncServer)
 	return s
 }
