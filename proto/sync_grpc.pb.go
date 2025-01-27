@@ -19,9 +19,9 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	Syncer_SetRecord_FullMethodName    = "/sync.Syncer/SetRecord"
-	Syncer_ListChanges_FullMethodName  = "/sync.Syncer/ListChanges"
-	Syncer_TrackChanges_FullMethodName = "/sync.Syncer/TrackChanges"
+	Syncer_SetRecord_FullMethodName     = "/sync.Syncer/SetRecord"
+	Syncer_ListChanges_FullMethodName   = "/sync.Syncer/ListChanges"
+	Syncer_ListenChanges_FullMethodName = "/sync.Syncer/ListenChanges"
 )
 
 // SyncerClient is the client API for Syncer service.
@@ -30,7 +30,7 @@ const (
 type SyncerClient interface {
 	SetRecord(ctx context.Context, in *SetRecordRequest, opts ...grpc.CallOption) (*SetRecordReply, error)
 	ListChanges(ctx context.Context, in *ListChangesRequest, opts ...grpc.CallOption) (*ListChangesReply, error)
-	TrackChanges(ctx context.Context, in *TrackChangesRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[Record], error)
+	ListenChanges(ctx context.Context, in *ListenChangesRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[Notification], error)
 }
 
 type syncerClient struct {
@@ -61,13 +61,13 @@ func (c *syncerClient) ListChanges(ctx context.Context, in *ListChangesRequest, 
 	return out, nil
 }
 
-func (c *syncerClient) TrackChanges(ctx context.Context, in *TrackChangesRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[Record], error) {
+func (c *syncerClient) ListenChanges(ctx context.Context, in *ListenChangesRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[Notification], error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	stream, err := c.cc.NewStream(ctx, &Syncer_ServiceDesc.Streams[0], Syncer_TrackChanges_FullMethodName, cOpts...)
+	stream, err := c.cc.NewStream(ctx, &Syncer_ServiceDesc.Streams[0], Syncer_ListenChanges_FullMethodName, cOpts...)
 	if err != nil {
 		return nil, err
 	}
-	x := &grpc.GenericClientStream[TrackChangesRequest, Record]{ClientStream: stream}
+	x := &grpc.GenericClientStream[ListenChangesRequest, Notification]{ClientStream: stream}
 	if err := x.ClientStream.SendMsg(in); err != nil {
 		return nil, err
 	}
@@ -78,7 +78,7 @@ func (c *syncerClient) TrackChanges(ctx context.Context, in *TrackChangesRequest
 }
 
 // This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
-type Syncer_TrackChangesClient = grpc.ServerStreamingClient[Record]
+type Syncer_ListenChangesClient = grpc.ServerStreamingClient[Notification]
 
 // SyncerServer is the server API for Syncer service.
 // All implementations must embed UnimplementedSyncerServer
@@ -86,7 +86,7 @@ type Syncer_TrackChangesClient = grpc.ServerStreamingClient[Record]
 type SyncerServer interface {
 	SetRecord(context.Context, *SetRecordRequest) (*SetRecordReply, error)
 	ListChanges(context.Context, *ListChangesRequest) (*ListChangesReply, error)
-	TrackChanges(*TrackChangesRequest, grpc.ServerStreamingServer[Record]) error
+	ListenChanges(*ListenChangesRequest, grpc.ServerStreamingServer[Notification]) error
 	mustEmbedUnimplementedSyncerServer()
 }
 
@@ -103,8 +103,8 @@ func (UnimplementedSyncerServer) SetRecord(context.Context, *SetRecordRequest) (
 func (UnimplementedSyncerServer) ListChanges(context.Context, *ListChangesRequest) (*ListChangesReply, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ListChanges not implemented")
 }
-func (UnimplementedSyncerServer) TrackChanges(*TrackChangesRequest, grpc.ServerStreamingServer[Record]) error {
-	return status.Errorf(codes.Unimplemented, "method TrackChanges not implemented")
+func (UnimplementedSyncerServer) ListenChanges(*ListenChangesRequest, grpc.ServerStreamingServer[Notification]) error {
+	return status.Errorf(codes.Unimplemented, "method ListenChanges not implemented")
 }
 func (UnimplementedSyncerServer) mustEmbedUnimplementedSyncerServer() {}
 func (UnimplementedSyncerServer) testEmbeddedByValue()                {}
@@ -163,16 +163,16 @@ func _Syncer_ListChanges_Handler(srv interface{}, ctx context.Context, dec func(
 	return interceptor(ctx, in, info, handler)
 }
 
-func _Syncer_TrackChanges_Handler(srv interface{}, stream grpc.ServerStream) error {
-	m := new(TrackChangesRequest)
+func _Syncer_ListenChanges_Handler(srv interface{}, stream grpc.ServerStream) error {
+	m := new(ListenChangesRequest)
 	if err := stream.RecvMsg(m); err != nil {
 		return err
 	}
-	return srv.(SyncerServer).TrackChanges(m, &grpc.GenericServerStream[TrackChangesRequest, Record]{ServerStream: stream})
+	return srv.(SyncerServer).ListenChanges(m, &grpc.GenericServerStream[ListenChangesRequest, Notification]{ServerStream: stream})
 }
 
 // This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
-type Syncer_TrackChangesServer = grpc.ServerStreamingServer[Record]
+type Syncer_ListenChangesServer = grpc.ServerStreamingServer[Notification]
 
 // Syncer_ServiceDesc is the grpc.ServiceDesc for Syncer service.
 // It's only intended for direct use with grpc.RegisterService,
@@ -192,8 +192,8 @@ var Syncer_ServiceDesc = grpc.ServiceDesc{
 	},
 	Streams: []grpc.StreamDesc{
 		{
-			StreamName:    "TrackChanges",
-			Handler:       _Syncer_TrackChanges_Handler,
+			StreamName:    "ListenChanges",
+			Handler:       _Syncer_ListenChanges_Handler,
 			ServerStreams: true,
 		},
 	},

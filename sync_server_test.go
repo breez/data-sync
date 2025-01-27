@@ -57,13 +57,13 @@ func TestTrackChanges(t *testing.T) {
 	toSign := fmt.Sprintf("%v", requestTime)
 	signature, err := middleware.SignMessage(privateKey, []byte(toSign))
 	require.NoError(t, err, "failed to sign message")
-	request := &proto.TrackChangesRequest{
+	request := &proto.ListenChangesRequest{
 		RequestTime: requestTime,
 		Signature:   signature,
 	}
 	request.RequestTime = requestTime
 	request.Signature = signature
-	stream, err := client.TrackChanges(context.Background(), request)
+	stream, err := client.ListenChanges(context.Background(), request)
 	require.NoError(t, err, "failed to call TrackChanges")
 
 	// check realtime changes
@@ -72,9 +72,11 @@ func TestTrackChanges(t *testing.T) {
 		Revision: 0,
 		Data:     []byte("revision1"),
 	}))
-	record, err := stream.Recv()
-	require.NoError(t, err, "failed to receive record")
-	require.Equal(t, record.Data, []byte("revision1"))
+	notification, err := stream.Recv()
+	require.NoError(t, err, "failed to receive notification")
+	res, err := json.Marshal(notification)
+	require.NoError(t, err, "failed to deserialize notification")
+	require.Equal(t, res, []byte("{}"))
 }
 
 func createSetRecordRequest(t *testing.T, privateKey *btcec.PrivateKey, record *proto.Record) *proto.SetRecordRequest {

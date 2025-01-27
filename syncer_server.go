@@ -15,11 +15,6 @@ import (
 	"github.com/breez/data-sync/store/sqlite"
 )
 
-type changeRecordEvent struct {
-	pubkey string
-	record *proto.Record
-}
-
 type PersistentSyncerServer struct {
 	proto.UnimplementedSyncerServer
 	sync.Mutex
@@ -83,7 +78,7 @@ func (s *PersistentSyncerServer) SetRecord(ctx context.Context, msg *proto.SetRe
 	}
 	newRecord := msg.Record
 	newRecord.Revision = newRevision
-	s.eventsManager.notifyChange(c.Value(middleware.USER_PUBKEY_CONTEXT_KEY).(string), newRecord)
+	s.eventsManager.notifyChange(c.Value(middleware.USER_PUBKEY_CONTEXT_KEY).(string))
 	log.Println("SetRecord: finished")
 	return &proto.SetRecordReply{
 		Status:      proto.SetRecordStatus_SUCCESS,
@@ -119,7 +114,7 @@ func (s *PersistentSyncerServer) ListChanges(ctx context.Context, msg *proto.Lis
 	}, nil
 }
 
-func (s *PersistentSyncerServer) TrackChanges(request *proto.TrackChangesRequest, stream proto.Syncer_TrackChangesServer) error {
+func (s *PersistentSyncerServer) ListenChanges(request *proto.ListenChangesRequest, stream proto.Syncer_ListenChangesServer) error {
 	context, err := middleware.Authenticate(s.config, stream.Context(), request)
 	if err != nil {
 		return err
@@ -130,14 +125,14 @@ func (s *PersistentSyncerServer) TrackChanges(request *proto.TrackChangesRequest
 	defer s.eventsManager.unsubscribe(pubkey, subscription.id)
 	for {
 		select {
-		case event, ok := <-subscription.eventsChan:
+		case _, ok := <-subscription.eventsChan:
 			if !ok {
 				// No more payment updates.
 				return nil
 			}
 
 			// Send event to the client.
-			if err := stream.Send(event.record); err != nil {
+			if err := stream.Send(&proto.Notification{}); err != nil {
 				return err
 			}
 
@@ -149,7 +144,6 @@ func (s *PersistentSyncerServer) TrackChanges(request *proto.TrackChangesRequest
 
 type notifyChange struct {
 	pubkey string
-	record *proto.Record
 }
 
 type unsubscribe struct {
@@ -160,7 +154,7 @@ type unsubscribe struct {
 type subscription struct {
 	id         int64
 	pubkey     string
-	eventsChan chan *changeRecordEvent
+	eventsChan chan struct{}
 }
 
 type eventsManager struct {
@@ -185,6 +179,7 @@ func (c *eventsManager) start(quitChan chan struct{}) {
 			case msg := <-c.msgChan:
 				if s, ok := msg.(*subscription); ok {
 					c.streams[s.pubkey] = append(c.streams[s.pubkey], s)
+					s.eventsChan <- struct{}{}
 				}
 				if s, ok := msg.(*unsubscribe); ok {
 					var newSubs []*subscription
@@ -202,7 +197,7 @@ func (c *eventsManager) start(quitChan chan struct{}) {
 				}
 				if s, ok := msg.(*notifyChange); ok {
 					for _, sub := range c.streams[s.pubkey] {
-						sub.eventsChan <- &changeRecordEvent{pubkey: s.pubkey, record: s.record}
+						sub.eventsChan <- struct{}{}
 					}
 				}
 
@@ -213,12 +208,12 @@ func (c *eventsManager) start(quitChan chan struct{}) {
 	}()
 }
 
-func (c *eventsManager) notifyChange(pubkey string, record *proto.Record) {
-	c.msgChan <- &notifyChange{pubkey: pubkey, record: record}
+func (c *eventsManager) notifyChange(pubkey string) {
+	c.msgChan <- &notifyChange{pubkey: pubkey}
 }
 
 func (c *eventsManager) subscribe(pubkey string) *subscription {
-	eventsChan := make(chan *changeRecordEvent)
+	eventsChan := make(chan struct{})
 	c.globalIDs += 1
 	s := &subscription{pubkey: pubkey, eventsChan: eventsChan, id: c.globalIDs}
 	c.msgChan <- s

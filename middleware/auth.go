@@ -91,10 +91,10 @@ func Authenticate(config *config.Config, ctx context.Context, req interface{}) (
 		signature = listChangesReq.Signature
 	}
 
-	trackChangesReq, ok := req.(*proto.TrackChangesRequest)
+	listenChangesReq, ok := req.(*proto.ListenChangesRequest)
 	if ok {
-		toVerify = fmt.Sprintf("%v", trackChangesReq.RequestTime)
-		signature = trackChangesReq.Signature
+		toVerify = fmt.Sprintf("%v", listenChangesReq.RequestTime)
+		signature = listenChangesReq.Signature
 	}
 
 	pubkey, err := VerifyMessage([]byte(toVerify), signature)
