@@ -78,7 +78,7 @@ func (s *PersistentSyncerServer) SetRecord(ctx context.Context, msg *proto.SetRe
 	}
 	newRecord := msg.Record
 	newRecord.Revision = newRevision
-	s.eventsManager.notifyChange(c.Value(middleware.USER_PUBKEY_CONTEXT_KEY).(string))
+	s.eventsManager.notifyChange(c.Value(middleware.USER_PUBKEY_CONTEXT_KEY).(string), msg.ClientId)
 	log.Println("SetRecord: finished")
 	return &proto.SetRecordReply{
 		Status:      proto.SetRecordStatus_SUCCESS,
@@ -125,14 +125,14 @@ func (s *PersistentSyncerServer) ListenChanges(request *proto.ListenChangesReque
 	defer s.eventsManager.unsubscribe(pubkey, subscription.id)
 	for {
 		select {
-		case _, ok := <-subscription.eventsChan:
+		case notification, ok := <-subscription.eventsChan:
 			if !ok {
 				// No more payment updates.
 				return nil
 			}
 
 			// Send event to the client.
-			if err := stream.Send(&proto.Notification{}); err != nil {
+			if err := stream.Send(notification); err != nil {
 				return err
 			}
 
@@ -143,7 +143,8 @@ func (s *PersistentSyncerServer) ListenChanges(request *proto.ListenChangesReque
 }
 
 type notifyChange struct {
-	pubkey string
+	pubkey   string
+	clientId *string
 }
 
 type unsubscribe struct {
@@ -154,7 +155,7 @@ type unsubscribe struct {
 type subscription struct {
 	id         int64
 	pubkey     string
-	eventsChan chan struct{}
+	eventsChan chan *proto.Notification
 }
 
 type eventsManager struct {
@@ -179,7 +180,7 @@ func (c *eventsManager) start(quitChan chan struct{}) {
 			case msg := <-c.msgChan:
 				if s, ok := msg.(*subscription); ok {
 					c.streams[s.pubkey] = append(c.streams[s.pubkey], s)
-					s.eventsChan <- struct{}{}
+					s.eventsChan <- &proto.Notification{}
 				}
 				if s, ok := msg.(*unsubscribe); ok {
 					var newSubs []*subscription
@@ -197,7 +198,7 @@ func (c *eventsManager) start(quitChan chan struct{}) {
 				}
 				if s, ok := msg.(*notifyChange); ok {
 					for _, sub := range c.streams[s.pubkey] {
-						sub.eventsChan <- struct{}{}
+						sub.eventsChan <- &proto.Notification{ClientId: s.clientId}
 					}
 				}
 
@@ -208,12 +209,12 @@ func (c *eventsManager) start(quitChan chan struct{}) {
 	}()
 }
 
-func (c *eventsManager) notifyChange(pubkey string) {
-	c.msgChan <- &notifyChange{pubkey: pubkey}
+func (c *eventsManager) notifyChange(pubkey string, clientId *string) {
+	c.msgChan <- &notifyChange{pubkey: pubkey, clientId: clientId}
 }
 
 func (c *eventsManager) subscribe(pubkey string) *subscription {
-	eventsChan := make(chan struct{})
+	eventsChan := make(chan *proto.Notification)
 	c.globalIDs += 1
 	s := &subscription{pubkey: pubkey, eventsChan: eventsChan, id: c.globalIDs}
 	c.msgChan <- s
