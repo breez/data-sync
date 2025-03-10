@@ -40,6 +40,10 @@ func CreateServer(config *config.Config, listener net.Listener, syncServer proto
 			MinTime:             time.Second * 5,
 			PermitWithoutStream: true,
 		}),
+		grpc.KeepaliveParams(keepalive.ServerParameters{
+			Time:    time.Second * 10,
+			Timeout: time.Second * 5,
+		}),
 	)
 	proto.RegisterSyncerServer(s, syncServer)
 	return s
