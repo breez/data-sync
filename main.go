@@ -62,7 +62,7 @@ func RunWebProxy(grpcServer *grpc.Server, config *config.Config) {
 	})
 
 	// Add CORS headers for browsers
-	corsHandler := cors.Default().Handler(handler)
+	corsHandler := cors.AllowAll().Handler(handler)
 
 	// Set up HTTP routes
 	httpMux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
