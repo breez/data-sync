@@ -97,6 +97,18 @@ func Authenticate(config *config.Config, ctx context.Context, req interface{}) (
 		signature = listenChangesReq.Signature
 	}
 
+	setLockReq, ok := req.(*proto.SetLockRequest)
+	if ok {
+		toVerify = fmt.Sprintf("%v-%v-%v-%v", setLockReq.LockName, setLockReq.InstanceId, setLockReq.Acquire, setLockReq.RequestTime)
+		signature = setLockReq.Signature
+	}
+
+	getLockReq, ok := req.(*proto.GetLockRequest)
+	if ok {
+		toVerify = fmt.Sprintf("%v-%v", getLockReq.LockName, getLockReq.RequestTime)
+		signature = getLockReq.Signature
+	}
+
 	pubkey, err := VerifyMessage([]byte(toVerify), signature)
 	if err != nil {
 		return nil, err

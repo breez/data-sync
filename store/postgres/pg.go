@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"embed"
 	"fmt"
+	"time"
 
 	"github.com/breez/data-sync/store"
 
@@ -136,4 +137,49 @@ func (s *PgSyncStorage) ListChanges(ctx context.Context, userID string, sinceRev
 		records = append(records, record)
 	}
 	return records, nil
+}
+
+func (s *PgSyncStorage) SetLock(ctx context.Context, userID, lockName, instanceID string, acquire bool, ttlSeconds uint32) error {
+	if acquire {
+		expiresAt := time.Now().Unix() + int64(ttlSeconds)
+		_, err := s.db.Exec(ctx, `
+			INSERT INTO locks (user_id, lock_name, instance_id, expires_at)
+			VALUES ($1, $2, $3, $4)
+			ON CONFLICT (user_id, lock_name, instance_id) DO UPDATE SET
+				expires_at = EXCLUDED.expires_at`,
+			userID, lockName, instanceID, expiresAt,
+		)
+		if err != nil {
+			return fmt.Errorf("failed to acquire lock: %w", err)
+		}
+		return nil
+	}
+
+	_, err := s.db.Exec(ctx, "DELETE FROM locks WHERE user_id = $1 AND lock_name = $2 AND instance_id = $3", userID, lockName, instanceID)
+	if err != nil {
+		return fmt.Errorf("failed to release lock: %w", err)
+	}
+	return nil
+}
+
+func (s *PgSyncStorage) HasActiveLock(ctx context.Context, userID, lockName string) (bool, error) {
+	now := time.Now().Unix()
+	var exists int
+	err := s.db.QueryRow(ctx, "SELECT 1 FROM locks WHERE user_id = $1 AND lock_name = $2 AND expires_at > $3 LIMIT 1", userID, lockName, now).Scan(&exists)
+	if err == pgx.ErrNoRows {
+		return false, nil
+	}
+	if err != nil {
+		return false, fmt.Errorf("failed to check lock: %w", err)
+	}
+	return true, nil
+}
+
+func (s *PgSyncStorage) DeleteExpiredLocks(ctx context.Context) error {
+	now := time.Now().Unix()
+	_, err := s.db.Exec(ctx, "DELETE FROM locks WHERE expires_at <= $1", now)
+	if err != nil {
+		return fmt.Errorf("failed to delete expired locks: %w", err)
+	}
+	return nil
 }

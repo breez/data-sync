@@ -4,9 +4,8 @@ import (
 	"context"
 	"database/sql"
 	"embed"
-	"errors"
 	"fmt"
-	"os"
+	"time"
 
 	"github.com/breez/data-sync/store"
 
@@ -26,10 +25,6 @@ type SQLiteSyncStorage struct {
 }
 
 func NewSQLiteSyncStorage(file string) (*SQLiteSyncStorage, error) {
-	needMigration := false
-	if _, err := os.Stat(file); errors.Is(err, os.ErrNotExist) {
-		needMigration = true
-	}
 	db, err := sql.Open("sqlite3", file)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open sqlite3 database %w", err)
@@ -51,10 +46,8 @@ func NewSQLiteSyncStorage(file string) (*SQLiteSyncStorage, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to instantiate migrations %w", err)
 	}
-	if needMigration {
-		if err := m.Up(); err != nil && err != migrate.ErrNoChange {
-			return nil, fmt.Errorf("failed to run migrations %w", err)
-		}
+	if err := m.Up(); err != nil && err != migrate.ErrNoChange {
+		return nil, fmt.Errorf("failed to run migrations %w", err)
 	}
 	return &SQLiteSyncStorage{db: db}, nil
 }
@@ -109,6 +102,45 @@ func (s *SQLiteSyncStorage) SetRecord(ctx context.Context, userID, id string, da
 		return 0, fmt.Errorf("failed to commit transaction: %w", err)
 	}
 	return newRevision, nil
+}
+
+func (s *SQLiteSyncStorage) SetLock(ctx context.Context, userID, lockName, instanceID string, acquire bool, ttlSeconds uint32) error {
+	if acquire {
+		expiresAt := time.Now().Unix() + int64(ttlSeconds)
+		_, err := s.db.ExecContext(ctx, "INSERT OR REPLACE INTO locks (user_id, lock_name, instance_id, expires_at) VALUES (?, ?, ?, ?)", userID, lockName, instanceID, expiresAt)
+		if err != nil {
+			return fmt.Errorf("failed to acquire lock: %w", err)
+		}
+		return nil
+	}
+
+	_, err := s.db.ExecContext(ctx, "DELETE FROM locks WHERE user_id = ? AND lock_name = ? AND instance_id = ?", userID, lockName, instanceID)
+	if err != nil {
+		return fmt.Errorf("failed to release lock: %w", err)
+	}
+	return nil
+}
+
+func (s *SQLiteSyncStorage) HasActiveLock(ctx context.Context, userID, lockName string) (bool, error) {
+	now := time.Now().Unix()
+	var exists int
+	err := s.db.QueryRowContext(ctx, "SELECT 1 FROM locks WHERE user_id = ? AND lock_name = ? AND expires_at > ? LIMIT 1", userID, lockName, now).Scan(&exists)
+	if err == sql.ErrNoRows {
+		return false, nil
+	}
+	if err != nil {
+		return false, fmt.Errorf("failed to check lock: %w", err)
+	}
+	return true, nil
+}
+
+func (s *SQLiteSyncStorage) DeleteExpiredLocks(ctx context.Context) error {
+	now := time.Now().Unix()
+	_, err := s.db.ExecContext(ctx, "DELETE FROM locks WHERE expires_at <= ?", now)
+	if err != nil {
+		return fmt.Errorf("failed to delete expired locks: %w", err)
+	}
+	return nil
 }
 
 func (s *SQLiteSyncStorage) ListChanges(ctx context.Context, userID string, sinceRevision uint64) ([]store.StoredRecord, error) {

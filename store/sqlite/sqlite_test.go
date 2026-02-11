@@ -27,3 +27,38 @@ func TestConflict(t *testing.T) {
 
 	(&store.StoreTest{}).TestConflict(t, storage)
 }
+
+func TestAcquireAndCheckLock(t *testing.T) {
+	storage, err := NewSQLiteSyncStorage("file:testacquirelock?mode=memory&cache=shared")
+	require.NoError(t, err, "failed to connect")
+
+	(&store.StoreTest{}).TestAcquireAndCheckLock(t, storage)
+}
+
+func TestLockExpiration(t *testing.T) {
+	storage, err := NewSQLiteSyncStorage("file:testlockexpiration?mode=memory&cache=shared")
+	require.NoError(t, err, "failed to connect")
+
+	(&store.StoreTest{}).TestLockExpiration(t, storage)
+}
+
+func TestMultipleInstanceLocks(t *testing.T) {
+	storage, err := NewSQLiteSyncStorage("file:testmultiinstancelocks?mode=memory&cache=shared")
+	require.NoError(t, err, "failed to connect")
+
+	(&store.StoreTest{}).TestMultipleInstanceLocks(t, storage)
+}
+
+func TestReleaseLockIdempotent(t *testing.T) {
+	storage, err := NewSQLiteSyncStorage("file:testreleaselockidempotent?mode=memory&cache=shared")
+	require.NoError(t, err, "failed to connect")
+
+	(&store.StoreTest{}).TestReleaseLockIdempotent(t, storage)
+}
+
+func TestDeleteExpiredLocks(t *testing.T) {
+	storage, err := NewSQLiteSyncStorage("file:testdeleteexpiredlocks?mode=memory&cache=shared")
+	require.NoError(t, err, "failed to connect")
+
+	(&store.StoreTest{}).TestDeleteExpiredLocks(t, storage)
+}
