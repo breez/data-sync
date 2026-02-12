@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/breez/data-sync/config"
+	"github.com/google/uuid"
 	"github.com/breez/data-sync/middleware"
 	"github.com/breez/data-sync/proto"
 	"github.com/breez/data-sync/store"
@@ -57,6 +58,7 @@ func NewPersistentSyncerServer(config *config.Config) (*PersistentSyncerServer, 
 }
 
 func (s *PersistentSyncerServer) Start(quitChan chan struct{}) {
+	log.Println("Deleting expired locks on startup")
 	if err := s.storage.DeleteExpiredLocks(context.Background()); err != nil {
 		log.Printf("Failed to delete expired locks on startup: %v\n", err)
 	}
@@ -66,6 +68,7 @@ func (s *PersistentSyncerServer) Start(quitChan chan struct{}) {
 		for {
 			select {
 			case <-ticker.C:
+				log.Println("Deleting expired locks")
 				if err := s.storage.DeleteExpiredLocks(context.Background()); err != nil {
 					log.Printf("Failed to delete expired locks: %v\n", err)
 				}
@@ -183,6 +186,13 @@ func validateLockName(name string) error {
 	return nil
 }
 
+func validateInstanceID(instanceID string) error {
+	if _, err := uuid.Parse(instanceID); err != nil {
+		return status.Errorf(codes.InvalidArgument, "instance_id must be a valid UUID")
+	}
+	return nil
+}
+
 func validateRequestTime(requestTime uint32) error {
 	diff := time.Since(time.Unix(int64(requestTime), 0))
 	if diff.Abs() > maxRequestAge {
@@ -194,6 +204,9 @@ func validateRequestTime(requestTime uint32) error {
 func (s *PersistentSyncerServer) SetLock(ctx context.Context, msg *proto.SetLockRequest) (*proto.SetLockReply, error) {
 	log.Println("SetLock: started")
 	if err := validateLockName(msg.LockName); err != nil {
+		return nil, err
+	}
+	if err := validateInstanceID(msg.InstanceId); err != nil {
 		return nil, err
 	}
 	if err := validateRequestTime(msg.RequestTime); err != nil {

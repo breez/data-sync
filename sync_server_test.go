@@ -7,6 +7,7 @@ import (
 	"log"
 	"net"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -14,9 +15,12 @@ import (
 	"github.com/breez/data-sync/middleware"
 	"github.com/breez/data-sync/proto"
 	"github.com/btcsuite/btcd/btcec/v2"
+	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/status"
 	"google.golang.org/grpc/test/bufconn"
 	"google.golang.org/protobuf/reflect/protoreflect"
 )
@@ -263,4 +267,205 @@ func server(ctx context.Context, config *config.Config) (proto.SyncerClient, fun
 	client := proto.NewSyncerClient(conn)
 
 	return client, closer
+}
+
+func signSetLock(t *testing.T, privateKey *btcec.PrivateKey, lockName, instanceID string, acquire bool, requestTime uint32) string {
+	toSign := fmt.Sprintf("%v-%v-%v-%v", lockName, instanceID, acquire, requestTime)
+	signature, err := middleware.SignMessage(privateKey, []byte(toSign))
+	require.NoError(t, err)
+	return signature
+}
+
+func signGetLock(t *testing.T, privateKey *btcec.PrivateKey, lockName string, requestTime uint32) string {
+	toSign := fmt.Sprintf("%v-%v", lockName, requestTime)
+	signature, err := middleware.SignMessage(privateKey, []byte(toSign))
+	require.NoError(t, err)
+	return signature
+}
+
+func TestSetLock_EmptyLockName(t *testing.T) {
+	cfg, privateKey := testParameters(t)
+	client, closer := server(context.Background(), cfg)
+	defer closer()
+	defer os.RemoveAll(cfg.SQLiteDirPath)
+
+	requestTime := uint32(time.Now().Unix())
+	instanceID := uuid.New().String()
+	_, err := client.SetLock(context.Background(), &proto.SetLockRequest{
+		LockName:    "",
+		InstanceId:  instanceID,
+		Acquire:     true,
+		RequestTime: requestTime,
+		Signature:   signSetLock(t, privateKey, "", instanceID, true, requestTime),
+	})
+	require.Error(t, err)
+	require.Equal(t, codes.InvalidArgument, status.Code(err))
+	require.Contains(t, err.Error(), "lock_name must not be empty")
+}
+
+func TestSetLock_LockNameTooLong(t *testing.T) {
+	cfg, privateKey := testParameters(t)
+	client, closer := server(context.Background(), cfg)
+	defer closer()
+	defer os.RemoveAll(cfg.SQLiteDirPath)
+
+	longName := strings.Repeat("a", 257)
+	requestTime := uint32(time.Now().Unix())
+	instanceID := uuid.New().String()
+	_, err := client.SetLock(context.Background(), &proto.SetLockRequest{
+		LockName:    longName,
+		InstanceId:  instanceID,
+		Acquire:     true,
+		RequestTime: requestTime,
+		Signature:   signSetLock(t, privateKey, longName, instanceID, true, requestTime),
+	})
+	require.Error(t, err)
+	require.Equal(t, codes.InvalidArgument, status.Code(err))
+	require.Contains(t, err.Error(), "exceeds maximum length")
+}
+
+func TestSetLock_InvalidInstanceID(t *testing.T) {
+	cfg, privateKey := testParameters(t)
+	client, closer := server(context.Background(), cfg)
+	defer closer()
+	defer os.RemoveAll(cfg.SQLiteDirPath)
+
+	requestTime := uint32(time.Now().Unix())
+	_, err := client.SetLock(context.Background(), &proto.SetLockRequest{
+		LockName:    "test_lock",
+		InstanceId:  "not-a-uuid",
+		Acquire:     true,
+		RequestTime: requestTime,
+		Signature:   signSetLock(t, privateKey, "test_lock", "not-a-uuid", true, requestTime),
+	})
+	require.Error(t, err)
+	require.Equal(t, codes.InvalidArgument, status.Code(err))
+	require.Contains(t, err.Error(), "valid UUID")
+}
+
+func TestSetLock_StaleRequestTime(t *testing.T) {
+	cfg, privateKey := testParameters(t)
+	client, closer := server(context.Background(), cfg)
+	defer closer()
+	defer os.RemoveAll(cfg.SQLiteDirPath)
+
+	staleTime := uint32(time.Now().Add(-10 * time.Minute).Unix())
+	instanceID := uuid.New().String()
+	_, err := client.SetLock(context.Background(), &proto.SetLockRequest{
+		LockName:    "test_lock",
+		InstanceId:  instanceID,
+		Acquire:     true,
+		RequestTime: staleTime,
+		Signature:   signSetLock(t, privateKey, "test_lock", instanceID, true, staleTime),
+	})
+	require.Error(t, err)
+	require.Equal(t, codes.InvalidArgument, status.Code(err))
+	require.Contains(t, err.Error(), "request time too far")
+}
+
+func TestSetLock_TTLCapped(t *testing.T) {
+	cfg, privateKey := testParameters(t)
+	client, closer := server(context.Background(), cfg)
+	defer closer()
+	defer os.RemoveAll(cfg.SQLiteDirPath)
+
+	// Acquire with a huge TTL — should succeed (silently capped, not rejected)
+	requestTime := uint32(time.Now().Unix())
+	instanceID := uuid.New().String()
+	hugeTTL := uint32(999999)
+	_, err := client.SetLock(context.Background(), &proto.SetLockRequest{
+		LockName:    "test_lock",
+		InstanceId:  instanceID,
+		Acquire:     true,
+		TtlSeconds:  &hugeTTL,
+		RequestTime: requestTime,
+		Signature:   signSetLock(t, privateKey, "test_lock", instanceID, true, requestTime),
+	})
+	require.NoError(t, err)
+
+	// Verify the lock is held
+	getLockTime := uint32(time.Now().Unix())
+	reply, err := client.GetLock(context.Background(), &proto.GetLockRequest{
+		LockName:    "test_lock",
+		RequestTime: getLockTime,
+		Signature:   signGetLock(t, privateKey, "test_lock", getLockTime),
+	})
+	require.NoError(t, err)
+	require.True(t, reply.Locked)
+}
+
+func TestSetLock_TTLExpiration(t *testing.T) {
+	cfg, privateKey := testParameters(t)
+	client, closer := server(context.Background(), cfg)
+	defer closer()
+	defer os.RemoveAll(cfg.SQLiteDirPath)
+
+	// Acquire with a 1s TTL
+	instanceID := uuid.New().String()
+	requestTime := uint32(time.Now().Unix())
+	smallTTL := uint32(1)
+	_, err := client.SetLock(context.Background(), &proto.SetLockRequest{
+		LockName:    "test_lock",
+		InstanceId:  instanceID,
+		Acquire:     true,
+		TtlSeconds:  &smallTTL,
+		RequestTime: requestTime,
+		Signature:   signSetLock(t, privateKey, "test_lock", instanceID, true, requestTime),
+	})
+	require.NoError(t, err)
+
+	// Should be held immediately
+	getLockTime := uint32(time.Now().Unix())
+	reply, err := client.GetLock(context.Background(), &proto.GetLockRequest{
+		LockName:    "test_lock",
+		RequestTime: getLockTime,
+		Signature:   signGetLock(t, privateKey, "test_lock", getLockTime),
+	})
+	require.NoError(t, err)
+	require.True(t, reply.Locked)
+
+	// Wait for expiry
+	time.Sleep(2 * time.Second)
+
+	// Should have expired
+	getLockTime2 := uint32(time.Now().Unix())
+	reply, err = client.GetLock(context.Background(), &proto.GetLockRequest{
+		LockName:    "test_lock",
+		RequestTime: getLockTime2,
+		Signature:   signGetLock(t, privateKey, "test_lock", getLockTime2),
+	})
+	require.NoError(t, err)
+	require.False(t, reply.Locked, "lock should have expired after TTL")
+}
+
+func TestGetLock_EmptyLockName(t *testing.T) {
+	cfg, privateKey := testParameters(t)
+	client, closer := server(context.Background(), cfg)
+	defer closer()
+	defer os.RemoveAll(cfg.SQLiteDirPath)
+
+	requestTime := uint32(time.Now().Unix())
+	_, err := client.GetLock(context.Background(), &proto.GetLockRequest{
+		LockName:    "",
+		RequestTime: requestTime,
+		Signature:   signGetLock(t, privateKey, "", requestTime),
+	})
+	require.Error(t, err)
+	require.Equal(t, codes.InvalidArgument, status.Code(err))
+}
+
+func TestGetLock_StaleRequestTime(t *testing.T) {
+	cfg, privateKey := testParameters(t)
+	client, closer := server(context.Background(), cfg)
+	defer closer()
+	defer os.RemoveAll(cfg.SQLiteDirPath)
+
+	staleTime := uint32(time.Now().Add(-10 * time.Minute).Unix())
+	_, err := client.GetLock(context.Background(), &proto.GetLockRequest{
+		LockName:    "test_lock",
+		RequestTime: staleTime,
+		Signature:   signGetLock(t, privateKey, "test_lock", staleTime),
+	})
+	require.Error(t, err)
+	require.Equal(t, codes.InvalidArgument, status.Code(err))
 }
