@@ -225,8 +225,12 @@ func (s *PersistentSyncerServer) SetLock(ctx context.Context, msg *proto.SetLock
 		ttl = min(int(*msg.TtlSeconds), maxLockTTLSeconds)
 	}
 
-	err = s.storage.SetLock(c, pubkey, msg.LockName, msg.InstanceId, msg.Acquire, uint32(ttl))
+	exclusive := msg.Exclusive != nil && *msg.Exclusive
+	err = s.storage.SetLock(c, pubkey, msg.LockName, msg.InstanceId, msg.Acquire, uint32(ttl), exclusive)
 	if err != nil {
+		if err == store.ErrLockHeld {
+			return nil, status.Errorf(codes.FailedPrecondition, "lock held by another instance")
+		}
 		return nil, err
 	}
 	log.Println("SetLock: finished")

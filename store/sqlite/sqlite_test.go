@@ -56,6 +56,20 @@ func TestReleaseLockIdempotent(t *testing.T) {
 	(&store.StoreTest{}).TestReleaseLockIdempotent(t, storage)
 }
 
+func TestExclusiveLock(t *testing.T) {
+	storage, err := NewSQLiteSyncStorage("file:testexclusivelock?mode=memory&cache=shared")
+	require.NoError(t, err, "failed to connect")
+
+	(&store.StoreTest{}).TestExclusiveLock(t, storage)
+}
+
+func TestExclusiveLockSameInstance(t *testing.T) {
+	storage, err := NewSQLiteSyncStorage("file:testexclusivelocksameinstance?mode=memory&cache=shared")
+	require.NoError(t, err, "failed to connect")
+
+	(&store.StoreTest{}).TestExclusiveLockSameInstance(t, storage)
+}
+
 func TestDeleteExpiredLocks(t *testing.T) {
 	storage, err := NewSQLiteSyncStorage("file:testdeleteexpiredlocks?mode=memory&cache=shared")
 	require.NoError(t, err, "failed to connect")

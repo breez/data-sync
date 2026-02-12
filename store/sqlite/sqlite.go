@@ -104,21 +104,39 @@ func (s *SQLiteSyncStorage) SetRecord(ctx context.Context, userID, id string, da
 	return newRevision, nil
 }
 
-func (s *SQLiteSyncStorage) SetLock(ctx context.Context, userID, lockName, instanceID string, acquire bool, ttlSeconds uint32) error {
-	if acquire {
-		expiresAt := time.Now().Unix() + int64(ttlSeconds)
-		_, err := s.db.ExecContext(ctx, "INSERT OR REPLACE INTO locks (user_id, lock_name, instance_id, expires_at) VALUES (?, ?, ?, ?)", userID, lockName, instanceID, expiresAt)
+func (s *SQLiteSyncStorage) SetLock(ctx context.Context, userID, lockName, instanceID string, acquire bool, ttlSeconds uint32, exclusive bool) error {
+	if !acquire {
+		_, err := s.db.ExecContext(ctx, "DELETE FROM locks WHERE user_id = ? AND lock_name = ? AND instance_id = ?", userID, lockName, instanceID)
 		if err != nil {
-			return fmt.Errorf("failed to acquire lock: %w", err)
+			return fmt.Errorf("failed to release lock: %w", err)
 		}
 		return nil
 	}
 
-	_, err := s.db.ExecContext(ctx, "DELETE FROM locks WHERE user_id = ? AND lock_name = ? AND instance_id = ?", userID, lockName, instanceID)
+	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
-		return fmt.Errorf("failed to release lock: %w", err)
+		return fmt.Errorf("failed to begin transaction: %w", err)
 	}
-	return nil
+	defer tx.Rollback()
+
+	if exclusive {
+		now := time.Now().Unix()
+		var exists int
+		err = tx.QueryRowContext(ctx, "SELECT 1 FROM locks WHERE user_id = ? AND lock_name = ? AND instance_id != ? AND expires_at > ? LIMIT 1", userID, lockName, instanceID, now).Scan(&exists)
+		if err == nil {
+			return store.ErrLockHeld
+		}
+		if err != sql.ErrNoRows {
+			return fmt.Errorf("failed to check existing locks: %w", err)
+		}
+	}
+
+	expiresAt := time.Now().Unix() + int64(ttlSeconds)
+	_, err = tx.ExecContext(ctx, "INSERT OR REPLACE INTO locks (user_id, lock_name, instance_id, expires_at) VALUES (?, ?, ?, ?)", userID, lockName, instanceID, expiresAt)
+	if err != nil {
+		return fmt.Errorf("failed to acquire lock: %w", err)
+	}
+	return tx.Commit()
 }
 
 func (s *SQLiteSyncStorage) HasActiveLock(ctx context.Context, userID, lockName string) (bool, error) {

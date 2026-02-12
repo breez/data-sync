@@ -75,7 +75,7 @@ func (s *StoreTest) TestAcquireAndCheckLock(t *testing.T, storage SyncStorage) {
 	require.False(t, locked)
 
 	// Acquire lock
-	err = storage.SetLock(context.Background(), userID, lockName, instanceID, true, 30)
+	err = storage.SetLock(context.Background(), userID, lockName, instanceID, true, 30, false)
 	require.NoError(t, err)
 
 	// Should be locked
@@ -84,7 +84,7 @@ func (s *StoreTest) TestAcquireAndCheckLock(t *testing.T, storage SyncStorage) {
 	require.True(t, locked)
 
 	// Release lock
-	err = storage.SetLock(context.Background(), userID, lockName, instanceID, false, 0)
+	err = storage.SetLock(context.Background(), userID, lockName, instanceID, false, 0, false)
 	require.NoError(t, err)
 
 	// Should be unlocked
@@ -99,7 +99,7 @@ func (s *StoreTest) TestLockExpiration(t *testing.T, storage SyncStorage) {
 	instanceID := uuid.New().String()
 
 	// Acquire lock with 1 second TTL
-	err := storage.SetLock(context.Background(), userID, lockName, instanceID, true, 1)
+	err := storage.SetLock(context.Background(), userID, lockName, instanceID, true, 1, false)
 	require.NoError(t, err)
 
 	// Should be locked immediately
@@ -123,9 +123,9 @@ func (s *StoreTest) TestMultipleInstanceLocks(t *testing.T, storage SyncStorage)
 	instanceB := uuid.New().String()
 
 	// Both instances acquire
-	err := storage.SetLock(context.Background(), userID, lockName, instanceA, true, 30)
+	err := storage.SetLock(context.Background(), userID, lockName, instanceA, true, 30, false)
 	require.NoError(t, err)
-	err = storage.SetLock(context.Background(), userID, lockName, instanceB, true, 30)
+	err = storage.SetLock(context.Background(), userID, lockName, instanceB, true, 30, false)
 	require.NoError(t, err)
 
 	// Should be locked
@@ -134,7 +134,7 @@ func (s *StoreTest) TestMultipleInstanceLocks(t *testing.T, storage SyncStorage)
 	require.True(t, locked)
 
 	// Release instance A
-	err = storage.SetLock(context.Background(), userID, lockName, instanceA, false, 0)
+	err = storage.SetLock(context.Background(), userID, lockName, instanceA, false, 0, false)
 	require.NoError(t, err)
 
 	// Still locked (instance B holds it)
@@ -143,7 +143,7 @@ func (s *StoreTest) TestMultipleInstanceLocks(t *testing.T, storage SyncStorage)
 	require.True(t, locked)
 
 	// Release instance B
-	err = storage.SetLock(context.Background(), userID, lockName, instanceB, false, 0)
+	err = storage.SetLock(context.Background(), userID, lockName, instanceB, false, 0, false)
 	require.NoError(t, err)
 
 	// Now unlocked
@@ -158,7 +158,58 @@ func (s *StoreTest) TestReleaseLockIdempotent(t *testing.T, storage SyncStorage)
 	instanceID := uuid.New().String()
 
 	// Release a lock that was never acquired — should not error
-	err := storage.SetLock(context.Background(), userID, lockName, instanceID, false, 0)
+	err := storage.SetLock(context.Background(), userID, lockName, instanceID, false, 0, false)
+	require.NoError(t, err)
+}
+
+func (s *StoreTest) TestExclusiveLock(t *testing.T, storage SyncStorage) {
+	userID := uuid.New().String()
+	lockName := "test_lock"
+	instanceA := uuid.New().String()
+	instanceB := uuid.New().String()
+
+	// Instance A acquires non-exclusive lock
+	err := storage.SetLock(context.Background(), userID, lockName, instanceA, true, 30, false)
+	require.NoError(t, err)
+
+	// Instance B tries exclusive acquire — should fail
+	err = storage.SetLock(context.Background(), userID, lockName, instanceB, true, 30, true)
+	require.ErrorIs(t, err, ErrLockHeld)
+
+	// Release instance A
+	err = storage.SetLock(context.Background(), userID, lockName, instanceA, false, 0, false)
+	require.NoError(t, err)
+
+	// Instance B tries exclusive acquire again — should succeed
+	err = storage.SetLock(context.Background(), userID, lockName, instanceB, true, 30, true)
+	require.NoError(t, err)
+
+	// Instance A tries non-exclusive acquire while B holds exclusive — succeeds (non-exclusive always succeeds)
+	err = storage.SetLock(context.Background(), userID, lockName, instanceA, true, 30, false)
+	require.NoError(t, err)
+
+	// Release both
+	err = storage.SetLock(context.Background(), userID, lockName, instanceA, false, 0, false)
+	require.NoError(t, err)
+	err = storage.SetLock(context.Background(), userID, lockName, instanceB, false, 0, false)
+	require.NoError(t, err)
+}
+
+func (s *StoreTest) TestExclusiveLockSameInstance(t *testing.T, storage SyncStorage) {
+	userID := uuid.New().String()
+	lockName := "test_lock"
+	instanceA := uuid.New().String()
+
+	// Instance A acquires non-exclusive lock
+	err := storage.SetLock(context.Background(), userID, lockName, instanceA, true, 30, false)
+	require.NoError(t, err)
+
+	// Same instance tries exclusive acquire — should succeed (only checks OTHER instances)
+	err = storage.SetLock(context.Background(), userID, lockName, instanceA, true, 30, true)
+	require.NoError(t, err)
+
+	// Release
+	err = storage.SetLock(context.Background(), userID, lockName, instanceA, false, 0, false)
 	require.NoError(t, err)
 }
 
@@ -168,7 +219,7 @@ func (s *StoreTest) TestDeleteExpiredLocks(t *testing.T, storage SyncStorage) {
 	instanceID := uuid.New().String()
 
 	// Acquire lock with 1 second TTL
-	err := storage.SetLock(context.Background(), userID, lockName, instanceID, true, 1)
+	err := storage.SetLock(context.Background(), userID, lockName, instanceID, true, 1, false)
 	require.NoError(t, err)
 
 	// Wait for expiry

@@ -139,27 +139,45 @@ func (s *PgSyncStorage) ListChanges(ctx context.Context, userID string, sinceRev
 	return records, nil
 }
 
-func (s *PgSyncStorage) SetLock(ctx context.Context, userID, lockName, instanceID string, acquire bool, ttlSeconds uint32) error {
-	if acquire {
-		expiresAt := time.Now().Unix() + int64(ttlSeconds)
-		_, err := s.db.Exec(ctx, `
-			INSERT INTO locks (user_id, lock_name, instance_id, expires_at)
-			VALUES ($1, $2, $3, $4)
-			ON CONFLICT (user_id, lock_name, instance_id) DO UPDATE SET
-				expires_at = EXCLUDED.expires_at`,
-			userID, lockName, instanceID, expiresAt,
-		)
+func (s *PgSyncStorage) SetLock(ctx context.Context, userID, lockName, instanceID string, acquire bool, ttlSeconds uint32, exclusive bool) error {
+	if !acquire {
+		_, err := s.db.Exec(ctx, "DELETE FROM locks WHERE user_id = $1 AND lock_name = $2 AND instance_id = $3", userID, lockName, instanceID)
 		if err != nil {
-			return fmt.Errorf("failed to acquire lock: %w", err)
+			return fmt.Errorf("failed to release lock: %w", err)
 		}
 		return nil
 	}
 
-	_, err := s.db.Exec(ctx, "DELETE FROM locks WHERE user_id = $1 AND lock_name = $2 AND instance_id = $3", userID, lockName, instanceID)
+	tx, err := s.db.Begin(ctx)
 	if err != nil {
-		return fmt.Errorf("failed to release lock: %w", err)
+		return fmt.Errorf("failed to begin transaction: %w", err)
 	}
-	return nil
+	defer tx.Rollback(ctx)
+
+	if exclusive {
+		now := time.Now().Unix()
+		var exists int
+		err = tx.QueryRow(ctx, "SELECT 1 FROM locks WHERE user_id = $1 AND lock_name = $2 AND instance_id != $3 AND expires_at > $4 LIMIT 1", userID, lockName, instanceID, now).Scan(&exists)
+		if err == nil {
+			return store.ErrLockHeld
+		}
+		if err != pgx.ErrNoRows {
+			return fmt.Errorf("failed to check existing locks: %w", err)
+		}
+	}
+
+	expiresAt := time.Now().Unix() + int64(ttlSeconds)
+	_, err = tx.Exec(ctx, `
+		INSERT INTO locks (user_id, lock_name, instance_id, expires_at)
+		VALUES ($1, $2, $3, $4)
+		ON CONFLICT (user_id, lock_name, instance_id) DO UPDATE SET
+			expires_at = EXCLUDED.expires_at`,
+		userID, lockName, instanceID, expiresAt,
+	)
+	if err != nil {
+		return fmt.Errorf("failed to acquire lock: %w", err)
+	}
+	return tx.Commit(ctx)
 }
 
 func (s *PgSyncStorage) HasActiveLock(ctx context.Context, userID, lockName string) (bool, error) {

@@ -2,7 +2,7 @@
 // versions:
 // - protoc-gen-go-grpc v1.6.1
 // - protoc             v6.30.2
-// source: sync.proto
+// source: proto/sync.proto
 
 package proto
 
@@ -273,5 +273,5 @@ var Syncer_ServiceDesc = grpc.ServiceDesc{
 			ServerStreams: true,
 		},
 	},
-	Metadata: "sync.proto",
+	Metadata: "proto/sync.proto",
 }

@@ -2,7 +2,7 @@
 // versions:
 // 	protoc-gen-go v1.36.11
 // 	protoc        v6.30.2
-// source: sync.proto
+// source: proto/sync.proto
 
 package proto
 
@@ -51,11 +51,11 @@ func (x SetRecordStatus) String() string {
 }
 
 func (SetRecordStatus) Descriptor() protoreflect.EnumDescriptor {
-	return file_sync_proto_enumTypes[0].Descriptor()
+	return file_proto_sync_proto_enumTypes[0].Descriptor()
 }
 
 func (SetRecordStatus) Type() protoreflect.EnumType {
-	return &file_sync_proto_enumTypes[0]
+	return &file_proto_sync_proto_enumTypes[0]
 }
 
 func (x SetRecordStatus) Number() protoreflect.EnumNumber {
@@ -64,7 +64,7 @@ func (x SetRecordStatus) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use SetRecordStatus.Descriptor instead.
 func (SetRecordStatus) EnumDescriptor() ([]byte, []int) {
-	return file_sync_proto_rawDescGZIP(), []int{0}
+	return file_proto_sync_proto_rawDescGZIP(), []int{0}
 }
 
 type Record struct {
@@ -79,7 +79,7 @@ type Record struct {
 
 func (x *Record) Reset() {
 	*x = Record{}
-	mi := &file_sync_proto_msgTypes[0]
+	mi := &file_proto_sync_proto_msgTypes[0]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -91,7 +91,7 @@ func (x *Record) String() string {
 func (*Record) ProtoMessage() {}
 
 func (x *Record) ProtoReflect() protoreflect.Message {
-	mi := &file_sync_proto_msgTypes[0]
+	mi := &file_proto_sync_proto_msgTypes[0]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -104,7 +104,7 @@ func (x *Record) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Record.ProtoReflect.Descriptor instead.
 func (*Record) Descriptor() ([]byte, []int) {
-	return file_sync_proto_rawDescGZIP(), []int{0}
+	return file_proto_sync_proto_rawDescGZIP(), []int{0}
 }
 
 func (x *Record) GetId() string {
@@ -147,7 +147,7 @@ type SetRecordRequest struct {
 
 func (x *SetRecordRequest) Reset() {
 	*x = SetRecordRequest{}
-	mi := &file_sync_proto_msgTypes[1]
+	mi := &file_proto_sync_proto_msgTypes[1]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -159,7 +159,7 @@ func (x *SetRecordRequest) String() string {
 func (*SetRecordRequest) ProtoMessage() {}
 
 func (x *SetRecordRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_sync_proto_msgTypes[1]
+	mi := &file_proto_sync_proto_msgTypes[1]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -172,7 +172,7 @@ func (x *SetRecordRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SetRecordRequest.ProtoReflect.Descriptor instead.
 func (*SetRecordRequest) Descriptor() ([]byte, []int) {
-	return file_sync_proto_rawDescGZIP(), []int{1}
+	return file_proto_sync_proto_rawDescGZIP(), []int{1}
 }
 
 func (x *SetRecordRequest) GetRecord() *Record {
@@ -213,7 +213,7 @@ type SetRecordReply struct {
 
 func (x *SetRecordReply) Reset() {
 	*x = SetRecordReply{}
-	mi := &file_sync_proto_msgTypes[2]
+	mi := &file_proto_sync_proto_msgTypes[2]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -225,7 +225,7 @@ func (x *SetRecordReply) String() string {
 func (*SetRecordReply) ProtoMessage() {}
 
 func (x *SetRecordReply) ProtoReflect() protoreflect.Message {
-	mi := &file_sync_proto_msgTypes[2]
+	mi := &file_proto_sync_proto_msgTypes[2]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -238,7 +238,7 @@ func (x *SetRecordReply) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SetRecordReply.ProtoReflect.Descriptor instead.
 func (*SetRecordReply) Descriptor() ([]byte, []int) {
-	return file_sync_proto_rawDescGZIP(), []int{2}
+	return file_proto_sync_proto_rawDescGZIP(), []int{2}
 }
 
 func (x *SetRecordReply) GetStatus() SetRecordStatus {
@@ -266,7 +266,7 @@ type ListChangesRequest struct {
 
 func (x *ListChangesRequest) Reset() {
 	*x = ListChangesRequest{}
-	mi := &file_sync_proto_msgTypes[3]
+	mi := &file_proto_sync_proto_msgTypes[3]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -278,7 +278,7 @@ func (x *ListChangesRequest) String() string {
 func (*ListChangesRequest) ProtoMessage() {}
 
 func (x *ListChangesRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_sync_proto_msgTypes[3]
+	mi := &file_proto_sync_proto_msgTypes[3]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -291,7 +291,7 @@ func (x *ListChangesRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListChangesRequest.ProtoReflect.Descriptor instead.
 func (*ListChangesRequest) Descriptor() ([]byte, []int) {
-	return file_sync_proto_rawDescGZIP(), []int{3}
+	return file_proto_sync_proto_rawDescGZIP(), []int{3}
 }
 
 func (x *ListChangesRequest) GetSinceRevision() uint64 {
@@ -324,7 +324,7 @@ type ListChangesReply struct {
 
 func (x *ListChangesReply) Reset() {
 	*x = ListChangesReply{}
-	mi := &file_sync_proto_msgTypes[4]
+	mi := &file_proto_sync_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -336,7 +336,7 @@ func (x *ListChangesReply) String() string {
 func (*ListChangesReply) ProtoMessage() {}
 
 func (x *ListChangesReply) ProtoReflect() protoreflect.Message {
-	mi := &file_sync_proto_msgTypes[4]
+	mi := &file_proto_sync_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -349,7 +349,7 @@ func (x *ListChangesReply) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListChangesReply.ProtoReflect.Descriptor instead.
 func (*ListChangesReply) Descriptor() ([]byte, []int) {
-	return file_sync_proto_rawDescGZIP(), []int{4}
+	return file_proto_sync_proto_rawDescGZIP(), []int{4}
 }
 
 func (x *ListChangesReply) GetChanges() []*Record {
@@ -369,7 +369,7 @@ type ListenChangesRequest struct {
 
 func (x *ListenChangesRequest) Reset() {
 	*x = ListenChangesRequest{}
-	mi := &file_sync_proto_msgTypes[5]
+	mi := &file_proto_sync_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -381,7 +381,7 @@ func (x *ListenChangesRequest) String() string {
 func (*ListenChangesRequest) ProtoMessage() {}
 
 func (x *ListenChangesRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_sync_proto_msgTypes[5]
+	mi := &file_proto_sync_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -394,7 +394,7 @@ func (x *ListenChangesRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListenChangesRequest.ProtoReflect.Descriptor instead.
 func (*ListenChangesRequest) Descriptor() ([]byte, []int) {
-	return file_sync_proto_rawDescGZIP(), []int{5}
+	return file_proto_sync_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *ListenChangesRequest) GetRequestTime() uint32 {
@@ -420,7 +420,7 @@ type Notification struct {
 
 func (x *Notification) Reset() {
 	*x = Notification{}
-	mi := &file_sync_proto_msgTypes[6]
+	mi := &file_proto_sync_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -432,7 +432,7 @@ func (x *Notification) String() string {
 func (*Notification) ProtoMessage() {}
 
 func (x *Notification) ProtoReflect() protoreflect.Message {
-	mi := &file_sync_proto_msgTypes[6]
+	mi := &file_proto_sync_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -445,7 +445,7 @@ func (x *Notification) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Notification.ProtoReflect.Descriptor instead.
 func (*Notification) Descriptor() ([]byte, []int) {
-	return file_sync_proto_rawDescGZIP(), []int{6}
+	return file_proto_sync_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *Notification) GetClientId() string {
@@ -463,13 +463,14 @@ type SetLockRequest struct {
 	TtlSeconds    *uint32                `protobuf:"varint,4,opt,name=ttl_seconds,json=ttlSeconds,proto3,oneof" json:"ttl_seconds,omitempty"`
 	RequestTime   uint32                 `protobuf:"varint,5,opt,name=request_time,json=requestTime,proto3" json:"request_time,omitempty"`
 	Signature     string                 `protobuf:"bytes,6,opt,name=signature,proto3" json:"signature,omitempty"`
+	Exclusive     *bool                  `protobuf:"varint,7,opt,name=exclusive,proto3,oneof" json:"exclusive,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *SetLockRequest) Reset() {
 	*x = SetLockRequest{}
-	mi := &file_sync_proto_msgTypes[7]
+	mi := &file_proto_sync_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -481,7 +482,7 @@ func (x *SetLockRequest) String() string {
 func (*SetLockRequest) ProtoMessage() {}
 
 func (x *SetLockRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_sync_proto_msgTypes[7]
+	mi := &file_proto_sync_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -494,7 +495,7 @@ func (x *SetLockRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SetLockRequest.ProtoReflect.Descriptor instead.
 func (*SetLockRequest) Descriptor() ([]byte, []int) {
-	return file_sync_proto_rawDescGZIP(), []int{7}
+	return file_proto_sync_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *SetLockRequest) GetLockName() string {
@@ -539,6 +540,13 @@ func (x *SetLockRequest) GetSignature() string {
 	return ""
 }
 
+func (x *SetLockRequest) GetExclusive() bool {
+	if x != nil && x.Exclusive != nil {
+		return *x.Exclusive
+	}
+	return false
+}
+
 type SetLockReply struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	unknownFields protoimpl.UnknownFields
@@ -547,7 +555,7 @@ type SetLockReply struct {
 
 func (x *SetLockReply) Reset() {
 	*x = SetLockReply{}
-	mi := &file_sync_proto_msgTypes[8]
+	mi := &file_proto_sync_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -559,7 +567,7 @@ func (x *SetLockReply) String() string {
 func (*SetLockReply) ProtoMessage() {}
 
 func (x *SetLockReply) ProtoReflect() protoreflect.Message {
-	mi := &file_sync_proto_msgTypes[8]
+	mi := &file_proto_sync_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -572,7 +580,7 @@ func (x *SetLockReply) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SetLockReply.ProtoReflect.Descriptor instead.
 func (*SetLockReply) Descriptor() ([]byte, []int) {
-	return file_sync_proto_rawDescGZIP(), []int{8}
+	return file_proto_sync_proto_rawDescGZIP(), []int{8}
 }
 
 type GetLockRequest struct {
@@ -586,7 +594,7 @@ type GetLockRequest struct {
 
 func (x *GetLockRequest) Reset() {
 	*x = GetLockRequest{}
-	mi := &file_sync_proto_msgTypes[9]
+	mi := &file_proto_sync_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -598,7 +606,7 @@ func (x *GetLockRequest) String() string {
 func (*GetLockRequest) ProtoMessage() {}
 
 func (x *GetLockRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_sync_proto_msgTypes[9]
+	mi := &file_proto_sync_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -611,7 +619,7 @@ func (x *GetLockRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetLockRequest.ProtoReflect.Descriptor instead.
 func (*GetLockRequest) Descriptor() ([]byte, []int) {
-	return file_sync_proto_rawDescGZIP(), []int{9}
+	return file_proto_sync_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *GetLockRequest) GetLockName() string {
@@ -644,7 +652,7 @@ type GetLockReply struct {
 
 func (x *GetLockReply) Reset() {
 	*x = GetLockReply{}
-	mi := &file_sync_proto_msgTypes[10]
+	mi := &file_proto_sync_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -656,7 +664,7 @@ func (x *GetLockReply) String() string {
 func (*GetLockReply) ProtoMessage() {}
 
 func (x *GetLockReply) ProtoReflect() protoreflect.Message {
-	mi := &file_sync_proto_msgTypes[10]
+	mi := &file_proto_sync_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -669,7 +677,7 @@ func (x *GetLockReply) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetLockReply.ProtoReflect.Descriptor instead.
 func (*GetLockReply) Descriptor() ([]byte, []int) {
-	return file_sync_proto_rawDescGZIP(), []int{10}
+	return file_proto_sync_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *GetLockReply) GetLocked() bool {
@@ -679,12 +687,11 @@ func (x *GetLockReply) GetLocked() bool {
 	return false
 }
 
-var File_sync_proto protoreflect.FileDescriptor
+var File_proto_sync_proto protoreflect.FileDescriptor
 
-const file_sync_proto_rawDesc = "" +
+const file_proto_sync_proto_rawDesc = "" +
 	"\n" +
-	"\n" +
-	"sync.proto\x12\x04sync\"o\n" +
+	"\x10proto/sync.proto\x12\x04sync\"o\n" +
 	"\x06Record\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1a\n" +
 	"\brevision\x18\x02 \x01(\x04R\brevision\x12%\n" +
@@ -712,7 +719,7 @@ const file_sync_proto_rawDesc = "" +
 	"\fNotification\x12 \n" +
 	"\tclient_id\x18\x01 \x01(\tH\x00R\bclientId\x88\x01\x01B\f\n" +
 	"\n" +
-	"_client_id\"\xdf\x01\n" +
+	"_client_id\"\x90\x02\n" +
 	"\x0eSetLockRequest\x12\x1b\n" +
 	"\tlock_name\x18\x01 \x01(\tR\blockName\x12\x1f\n" +
 	"\vinstance_id\x18\x02 \x01(\tR\n" +
@@ -721,8 +728,11 @@ const file_sync_proto_rawDesc = "" +
 	"\vttl_seconds\x18\x04 \x01(\rH\x00R\n" +
 	"ttlSeconds\x88\x01\x01\x12!\n" +
 	"\frequest_time\x18\x05 \x01(\rR\vrequestTime\x12\x1c\n" +
-	"\tsignature\x18\x06 \x01(\tR\tsignatureB\x0e\n" +
-	"\f_ttl_seconds\"\x0e\n" +
+	"\tsignature\x18\x06 \x01(\tR\tsignature\x12!\n" +
+	"\texclusive\x18\a \x01(\bH\x01R\texclusive\x88\x01\x01B\x0e\n" +
+	"\f_ttl_secondsB\f\n" +
+	"\n" +
+	"_exclusive\"\x0e\n" +
 	"\fSetLockReply\"n\n" +
 	"\x0eGetLockRequest\x12\x1b\n" +
 	"\tlock_name\x18\x01 \x01(\tR\blockName\x12!\n" +
@@ -741,20 +751,20 @@ const file_sync_proto_rawDesc = "" +
 	"\aGetLock\x12\x14.sync.GetLockRequest\x1a\x12.sync.GetLockReply\"\x00B\"Z github.com/breez/data-sync/protob\x06proto3"
 
 var (
-	file_sync_proto_rawDescOnce sync.Once
-	file_sync_proto_rawDescData []byte
+	file_proto_sync_proto_rawDescOnce sync.Once
+	file_proto_sync_proto_rawDescData []byte
 )
 
-func file_sync_proto_rawDescGZIP() []byte {
-	file_sync_proto_rawDescOnce.Do(func() {
-		file_sync_proto_rawDescData = protoimpl.X.CompressGZIP(unsafe.Slice(unsafe.StringData(file_sync_proto_rawDesc), len(file_sync_proto_rawDesc)))
+func file_proto_sync_proto_rawDescGZIP() []byte {
+	file_proto_sync_proto_rawDescOnce.Do(func() {
+		file_proto_sync_proto_rawDescData = protoimpl.X.CompressGZIP(unsafe.Slice(unsafe.StringData(file_proto_sync_proto_rawDesc), len(file_proto_sync_proto_rawDesc)))
 	})
-	return file_sync_proto_rawDescData
+	return file_proto_sync_proto_rawDescData
 }
 
-var file_sync_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_sync_proto_msgTypes = make([]protoimpl.MessageInfo, 11)
-var file_sync_proto_goTypes = []any{
+var file_proto_sync_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
+var file_proto_sync_proto_msgTypes = make([]protoimpl.MessageInfo, 11)
+var file_proto_sync_proto_goTypes = []any{
 	(SetRecordStatus)(0),         // 0: sync.SetRecordStatus
 	(*Record)(nil),               // 1: sync.Record
 	(*SetRecordRequest)(nil),     // 2: sync.SetRecordRequest
@@ -768,7 +778,7 @@ var file_sync_proto_goTypes = []any{
 	(*GetLockRequest)(nil),       // 10: sync.GetLockRequest
 	(*GetLockReply)(nil),         // 11: sync.GetLockReply
 }
-var file_sync_proto_depIdxs = []int32{
+var file_proto_sync_proto_depIdxs = []int32{
 	1,  // 0: sync.SetRecordRequest.record:type_name -> sync.Record
 	0,  // 1: sync.SetRecordReply.status:type_name -> sync.SetRecordStatus
 	1,  // 2: sync.ListChangesReply.changes:type_name -> sync.Record
@@ -789,30 +799,30 @@ var file_sync_proto_depIdxs = []int32{
 	0,  // [0:3] is the sub-list for field type_name
 }
 
-func init() { file_sync_proto_init() }
-func file_sync_proto_init() {
-	if File_sync_proto != nil {
+func init() { file_proto_sync_proto_init() }
+func file_proto_sync_proto_init() {
+	if File_proto_sync_proto != nil {
 		return
 	}
-	file_sync_proto_msgTypes[1].OneofWrappers = []any{}
-	file_sync_proto_msgTypes[6].OneofWrappers = []any{}
-	file_sync_proto_msgTypes[7].OneofWrappers = []any{}
+	file_proto_sync_proto_msgTypes[1].OneofWrappers = []any{}
+	file_proto_sync_proto_msgTypes[6].OneofWrappers = []any{}
+	file_proto_sync_proto_msgTypes[7].OneofWrappers = []any{}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
-			RawDescriptor: unsafe.Slice(unsafe.StringData(file_sync_proto_rawDesc), len(file_sync_proto_rawDesc)),
+			RawDescriptor: unsafe.Slice(unsafe.StringData(file_proto_sync_proto_rawDesc), len(file_proto_sync_proto_rawDesc)),
 			NumEnums:      1,
 			NumMessages:   11,
 			NumExtensions: 0,
 			NumServices:   1,
 		},
-		GoTypes:           file_sync_proto_goTypes,
-		DependencyIndexes: file_sync_proto_depIdxs,
-		EnumInfos:         file_sync_proto_enumTypes,
-		MessageInfos:      file_sync_proto_msgTypes,
+		GoTypes:           file_proto_sync_proto_goTypes,
+		DependencyIndexes: file_proto_sync_proto_depIdxs,
+		EnumInfos:         file_proto_sync_proto_enumTypes,
+		MessageInfos:      file_proto_sync_proto_msgTypes,
 	}.Build()
-	File_sync_proto = out.File
-	file_sync_proto_goTypes = nil
-	file_sync_proto_depIdxs = nil
+	File_proto_sync_proto = out.File
+	file_proto_sync_proto_goTypes = nil
+	file_proto_sync_proto_depIdxs = nil
 }
