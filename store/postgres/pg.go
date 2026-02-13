@@ -148,14 +148,15 @@ func (s *PgSyncStorage) SetLock(ctx context.Context, userID, lockName, instanceI
 		return nil
 	}
 
-	tx, err := s.db.Begin(ctx)
+	tx, err := s.db.BeginTx(ctx, pgx.TxOptions{IsoLevel: pgx.Serializable})
 	if err != nil {
 		return fmt.Errorf("failed to begin transaction: %w", err)
 	}
 	defer tx.Rollback(ctx)
 
+	now := time.Now().Unix()
 	if exclusive {
-		now := time.Now().Unix()
+		// Exclusive acquire: reject if any OTHER instance holds an active lock
 		var exists int
 		err = tx.QueryRow(ctx, "SELECT 1 FROM locks WHERE user_id = $1 AND lock_name = $2 AND instance_id != $3 AND expires_at > $4 LIMIT 1", userID, lockName, instanceID, now).Scan(&exists)
 		if err == nil {
@@ -164,15 +165,26 @@ func (s *PgSyncStorage) SetLock(ctx context.Context, userID, lockName, instanceI
 		if err != pgx.ErrNoRows {
 			return fmt.Errorf("failed to check existing locks: %w", err)
 		}
+	} else {
+		// Non-exclusive acquire: reject if an exclusive lock exists from ANY other instance
+		var exists int
+		err = tx.QueryRow(ctx, "SELECT 1 FROM locks WHERE user_id = $1 AND lock_name = $2 AND instance_id != $3 AND exclusive = true AND expires_at > $4 LIMIT 1", userID, lockName, instanceID, now).Scan(&exists)
+		if err == nil {
+			return store.ErrLockHeld
+		}
+		if err != pgx.ErrNoRows {
+			return fmt.Errorf("failed to check exclusive locks: %w", err)
+		}
 	}
 
 	expiresAt := time.Now().Unix() + int64(ttlSeconds)
 	_, err = tx.Exec(ctx, `
-		INSERT INTO locks (user_id, lock_name, instance_id, expires_at)
-		VALUES ($1, $2, $3, $4)
+		INSERT INTO locks (user_id, lock_name, instance_id, expires_at, exclusive)
+		VALUES ($1, $2, $3, $4, $5)
 		ON CONFLICT (user_id, lock_name, instance_id) DO UPDATE SET
-			expires_at = EXCLUDED.expires_at`,
-		userID, lockName, instanceID, expiresAt,
+			expires_at = EXCLUDED.expires_at,
+			exclusive = EXCLUDED.exclusive`,
+		userID, lockName, instanceID, expiresAt, exclusive,
 	)
 	if err != nil {
 		return fmt.Errorf("failed to acquire lock: %w", err)

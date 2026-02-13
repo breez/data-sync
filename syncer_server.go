@@ -63,7 +63,7 @@ func (s *PersistentSyncerServer) Start(quitChan chan struct{}) {
 		log.Printf("Failed to delete expired locks on startup: %v\n", err)
 	}
 	go func() {
-		ticker := time.NewTicker(1 * time.Hour)
+		ticker := time.NewTicker(5 * time.Minute)
 		defer ticker.Stop()
 		for {
 			select {
@@ -225,8 +225,7 @@ func (s *PersistentSyncerServer) SetLock(ctx context.Context, msg *proto.SetLock
 		ttl = min(int(*msg.TtlSeconds), maxLockTTLSeconds)
 	}
 
-	exclusive := msg.Exclusive != nil && *msg.Exclusive
-	err = s.storage.SetLock(c, pubkey, msg.LockName, msg.InstanceId, msg.Acquire, uint32(ttl), exclusive)
+	err = s.storage.SetLock(c, pubkey, msg.LockName, msg.InstanceId, msg.Acquire, uint32(ttl), msg.Exclusive)
 	if err != nil {
 		if err == store.ErrLockHeld {
 			return nil, status.Errorf(codes.FailedPrecondition, "lock held by another instance")

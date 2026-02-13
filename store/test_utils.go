@@ -172,7 +172,7 @@ func (s *StoreTest) TestExclusiveLock(t *testing.T, storage SyncStorage) {
 	err := storage.SetLock(context.Background(), userID, lockName, instanceA, true, 30, false)
 	require.NoError(t, err)
 
-	// Instance B tries exclusive acquire — should fail
+	// Instance B tries exclusive acquire — should fail (non-exclusive held by A)
 	err = storage.SetLock(context.Background(), userID, lockName, instanceB, true, 30, true)
 	require.ErrorIs(t, err, ErrLockHeld)
 
@@ -184,14 +184,20 @@ func (s *StoreTest) TestExclusiveLock(t *testing.T, storage SyncStorage) {
 	err = storage.SetLock(context.Background(), userID, lockName, instanceB, true, 30, true)
 	require.NoError(t, err)
 
-	// Instance A tries non-exclusive acquire while B holds exclusive — succeeds (non-exclusive always succeeds)
+	// Instance A tries non-exclusive acquire while B holds exclusive — should fail
+	err = storage.SetLock(context.Background(), userID, lockName, instanceA, true, 30, false)
+	require.ErrorIs(t, err, ErrLockHeld)
+
+	// Release instance B
+	err = storage.SetLock(context.Background(), userID, lockName, instanceB, false, 0, false)
+	require.NoError(t, err)
+
+	// Now instance A can acquire non-exclusive
 	err = storage.SetLock(context.Background(), userID, lockName, instanceA, true, 30, false)
 	require.NoError(t, err)
 
-	// Release both
+	// Release
 	err = storage.SetLock(context.Background(), userID, lockName, instanceA, false, 0, false)
-	require.NoError(t, err)
-	err = storage.SetLock(context.Background(), userID, lockName, instanceB, false, 0, false)
 	require.NoError(t, err)
 }
 

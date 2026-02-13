@@ -99,7 +99,7 @@ func Authenticate(config *config.Config, ctx context.Context, req interface{}) (
 
 	setLockReq, ok := req.(*proto.SetLockRequest)
 	if ok {
-		toVerify = fmt.Sprintf("%v-%v-%v-%v", setLockReq.LockName, setLockReq.InstanceId, setLockReq.Acquire, setLockReq.RequestTime)
+		toVerify = fmt.Sprintf("%v-%v-%v-%v-%v", setLockReq.LockName, setLockReq.InstanceId, setLockReq.Acquire, setLockReq.Exclusive, setLockReq.RequestTime)
 		signature = setLockReq.Signature
 	}
 

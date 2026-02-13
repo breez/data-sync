@@ -460,10 +460,10 @@ type SetLockRequest struct {
 	LockName      string                 `protobuf:"bytes,1,opt,name=lock_name,json=lockName,proto3" json:"lock_name,omitempty"`
 	InstanceId    string                 `protobuf:"bytes,2,opt,name=instance_id,json=instanceId,proto3" json:"instance_id,omitempty"`
 	Acquire       bool                   `protobuf:"varint,3,opt,name=acquire,proto3" json:"acquire,omitempty"`
-	TtlSeconds    *uint32                `protobuf:"varint,4,opt,name=ttl_seconds,json=ttlSeconds,proto3,oneof" json:"ttl_seconds,omitempty"`
-	RequestTime   uint32                 `protobuf:"varint,5,opt,name=request_time,json=requestTime,proto3" json:"request_time,omitempty"`
-	Signature     string                 `protobuf:"bytes,6,opt,name=signature,proto3" json:"signature,omitempty"`
-	Exclusive     *bool                  `protobuf:"varint,7,opt,name=exclusive,proto3,oneof" json:"exclusive,omitempty"`
+	Exclusive     bool                   `protobuf:"varint,4,opt,name=exclusive,proto3" json:"exclusive,omitempty"`
+	TtlSeconds    *uint32                `protobuf:"varint,5,opt,name=ttl_seconds,json=ttlSeconds,proto3,oneof" json:"ttl_seconds,omitempty"`
+	RequestTime   uint32                 `protobuf:"varint,6,opt,name=request_time,json=requestTime,proto3" json:"request_time,omitempty"`
+	Signature     string                 `protobuf:"bytes,7,opt,name=signature,proto3" json:"signature,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -519,6 +519,13 @@ func (x *SetLockRequest) GetAcquire() bool {
 	return false
 }
 
+func (x *SetLockRequest) GetExclusive() bool {
+	if x != nil {
+		return x.Exclusive
+	}
+	return false
+}
+
 func (x *SetLockRequest) GetTtlSeconds() uint32 {
 	if x != nil && x.TtlSeconds != nil {
 		return *x.TtlSeconds
@@ -538,13 +545,6 @@ func (x *SetLockRequest) GetSignature() string {
 		return x.Signature
 	}
 	return ""
-}
-
-func (x *SetLockRequest) GetExclusive() bool {
-	if x != nil && x.Exclusive != nil {
-		return *x.Exclusive
-	}
-	return false
 }
 
 type SetLockReply struct {
@@ -719,20 +719,18 @@ const file_proto_sync_proto_rawDesc = "" +
 	"\fNotification\x12 \n" +
 	"\tclient_id\x18\x01 \x01(\tH\x00R\bclientId\x88\x01\x01B\f\n" +
 	"\n" +
-	"_client_id\"\x90\x02\n" +
+	"_client_id\"\xfd\x01\n" +
 	"\x0eSetLockRequest\x12\x1b\n" +
 	"\tlock_name\x18\x01 \x01(\tR\blockName\x12\x1f\n" +
 	"\vinstance_id\x18\x02 \x01(\tR\n" +
 	"instanceId\x12\x18\n" +
-	"\aacquire\x18\x03 \x01(\bR\aacquire\x12$\n" +
-	"\vttl_seconds\x18\x04 \x01(\rH\x00R\n" +
+	"\aacquire\x18\x03 \x01(\bR\aacquire\x12\x1c\n" +
+	"\texclusive\x18\x04 \x01(\bR\texclusive\x12$\n" +
+	"\vttl_seconds\x18\x05 \x01(\rH\x00R\n" +
 	"ttlSeconds\x88\x01\x01\x12!\n" +
-	"\frequest_time\x18\x05 \x01(\rR\vrequestTime\x12\x1c\n" +
-	"\tsignature\x18\x06 \x01(\tR\tsignature\x12!\n" +
-	"\texclusive\x18\a \x01(\bH\x01R\texclusive\x88\x01\x01B\x0e\n" +
-	"\f_ttl_secondsB\f\n" +
-	"\n" +
-	"_exclusive\"\x0e\n" +
+	"\frequest_time\x18\x06 \x01(\rR\vrequestTime\x12\x1c\n" +
+	"\tsignature\x18\a \x01(\tR\tsignatureB\x0e\n" +
+	"\f_ttl_seconds\"\x0e\n" +
 	"\fSetLockReply\"n\n" +
 	"\x0eGetLockRequest\x12\x1b\n" +
 	"\tlock_name\x18\x01 \x01(\tR\blockName\x12!\n" +

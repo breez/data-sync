@@ -113,14 +113,15 @@ func (s *SQLiteSyncStorage) SetLock(ctx context.Context, userID, lockName, insta
 		return nil
 	}
 
-	tx, err := s.db.BeginTx(ctx, nil)
+	tx, err := s.db.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelSerializable})
 	if err != nil {
 		return fmt.Errorf("failed to begin transaction: %w", err)
 	}
 	defer tx.Rollback()
 
+	now := time.Now().Unix()
 	if exclusive {
-		now := time.Now().Unix()
+		// Exclusive acquire: reject if any OTHER instance holds an active lock
 		var exists int
 		err = tx.QueryRowContext(ctx, "SELECT 1 FROM locks WHERE user_id = ? AND lock_name = ? AND instance_id != ? AND expires_at > ? LIMIT 1", userID, lockName, instanceID, now).Scan(&exists)
 		if err == nil {
@@ -129,10 +130,24 @@ func (s *SQLiteSyncStorage) SetLock(ctx context.Context, userID, lockName, insta
 		if err != sql.ErrNoRows {
 			return fmt.Errorf("failed to check existing locks: %w", err)
 		}
+	} else {
+		// Non-exclusive acquire: reject if an exclusive lock exists from ANY other instance
+		var exists int
+		err = tx.QueryRowContext(ctx, "SELECT 1 FROM locks WHERE user_id = ? AND lock_name = ? AND instance_id != ? AND exclusive = 1 AND expires_at > ? LIMIT 1", userID, lockName, instanceID, now).Scan(&exists)
+		if err == nil {
+			return store.ErrLockHeld
+		}
+		if err != sql.ErrNoRows {
+			return fmt.Errorf("failed to check exclusive locks: %w", err)
+		}
 	}
 
 	expiresAt := time.Now().Unix() + int64(ttlSeconds)
-	_, err = tx.ExecContext(ctx, "INSERT OR REPLACE INTO locks (user_id, lock_name, instance_id, expires_at) VALUES (?, ?, ?, ?)", userID, lockName, instanceID, expiresAt)
+	exclusiveInt := 0
+	if exclusive {
+		exclusiveInt = 1
+	}
+	_, err = tx.ExecContext(ctx, "INSERT OR REPLACE INTO locks (user_id, lock_name, instance_id, expires_at, exclusive) VALUES (?, ?, ?, ?, ?)", userID, lockName, instanceID, expiresAt, exclusiveInt)
 	if err != nil {
 		return fmt.Errorf("failed to acquire lock: %w", err)
 	}
