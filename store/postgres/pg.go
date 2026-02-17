@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"embed"
 	"fmt"
+	"time"
 
 	"github.com/breez/data-sync/store"
 
@@ -136,4 +137,79 @@ func (s *PgSyncStorage) ListChanges(ctx context.Context, userID string, sinceRev
 		records = append(records, record)
 	}
 	return records, nil
+}
+
+func (s *PgSyncStorage) SetLock(ctx context.Context, userID, lockName, instanceID string, acquire bool, ttlSeconds uint32, exclusive bool) error {
+	if !acquire {
+		_, err := s.db.Exec(ctx, "DELETE FROM locks WHERE user_id = $1 AND lock_name = $2 AND instance_id = $3", userID, lockName, instanceID)
+		if err != nil {
+			return fmt.Errorf("failed to release lock: %w", err)
+		}
+		return nil
+	}
+
+	tx, err := s.db.BeginTx(ctx, pgx.TxOptions{IsoLevel: pgx.Serializable})
+	if err != nil {
+		return fmt.Errorf("failed to begin transaction: %w", err)
+	}
+	defer tx.Rollback(ctx)
+
+	now := time.Now().Unix()
+	if exclusive {
+		// Exclusive acquire: reject if any OTHER instance holds an active lock
+		var exists int
+		err = tx.QueryRow(ctx, "SELECT 1 FROM locks WHERE user_id = $1 AND lock_name = $2 AND instance_id != $3 AND expires_at > $4 LIMIT 1", userID, lockName, instanceID, now).Scan(&exists)
+		if err == nil {
+			return store.ErrLockHeld
+		}
+		if err != pgx.ErrNoRows {
+			return fmt.Errorf("failed to check existing locks: %w", err)
+		}
+	} else {
+		// Non-exclusive acquire: reject if an exclusive lock exists from ANY other instance
+		var exists int
+		err = tx.QueryRow(ctx, "SELECT 1 FROM locks WHERE user_id = $1 AND lock_name = $2 AND instance_id != $3 AND exclusive = true AND expires_at > $4 LIMIT 1", userID, lockName, instanceID, now).Scan(&exists)
+		if err == nil {
+			return store.ErrLockHeld
+		}
+		if err != pgx.ErrNoRows {
+			return fmt.Errorf("failed to check exclusive locks: %w", err)
+		}
+	}
+
+	expiresAt := time.Now().Unix() + int64(ttlSeconds)
+	_, err = tx.Exec(ctx, `
+		INSERT INTO locks (user_id, lock_name, instance_id, expires_at, exclusive)
+		VALUES ($1, $2, $3, $4, $5)
+		ON CONFLICT (user_id, lock_name, instance_id) DO UPDATE SET
+			expires_at = EXCLUDED.expires_at,
+			exclusive = EXCLUDED.exclusive`,
+		userID, lockName, instanceID, expiresAt, exclusive,
+	)
+	if err != nil {
+		return fmt.Errorf("failed to acquire lock: %w", err)
+	}
+	return tx.Commit(ctx)
+}
+
+func (s *PgSyncStorage) HasActiveLock(ctx context.Context, userID, lockName string) (bool, error) {
+	now := time.Now().Unix()
+	var exists int
+	err := s.db.QueryRow(ctx, "SELECT 1 FROM locks WHERE user_id = $1 AND lock_name = $2 AND expires_at > $3 LIMIT 1", userID, lockName, now).Scan(&exists)
+	if err == pgx.ErrNoRows {
+		return false, nil
+	}
+	if err != nil {
+		return false, fmt.Errorf("failed to check lock: %w", err)
+	}
+	return true, nil
+}
+
+func (s *PgSyncStorage) DeleteExpiredLocks(ctx context.Context) error {
+	now := time.Now().Unix()
+	_, err := s.db.Exec(ctx, "DELETE FROM locks WHERE expires_at <= $1", now)
+	if err != nil {
+		return fmt.Errorf("failed to delete expired locks: %w", err)
+	}
+	return nil
 }

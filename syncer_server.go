@@ -6,13 +6,17 @@ import (
 	"log"
 	"os"
 	"sync"
+	"time"
 
 	"github.com/breez/data-sync/config"
+	"github.com/google/uuid"
 	"github.com/breez/data-sync/middleware"
 	"github.com/breez/data-sync/proto"
 	"github.com/breez/data-sync/store"
 	"github.com/breez/data-sync/store/postgres"
 	"github.com/breez/data-sync/store/sqlite"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 type PersistentSyncerServer struct {
@@ -54,6 +58,25 @@ func NewPersistentSyncerServer(config *config.Config) (*PersistentSyncerServer, 
 }
 
 func (s *PersistentSyncerServer) Start(quitChan chan struct{}) {
+	log.Println("Deleting expired locks on startup")
+	if err := s.storage.DeleteExpiredLocks(context.Background()); err != nil {
+		log.Printf("Failed to delete expired locks on startup: %v\n", err)
+	}
+	go func() {
+		ticker := time.NewTicker(5 * time.Minute)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ticker.C:
+				log.Println("Deleting expired locks")
+				if err := s.storage.DeleteExpiredLocks(context.Background()); err != nil {
+					log.Printf("Failed to delete expired locks: %v\n", err)
+				}
+			case <-quitChan:
+				return
+			}
+		}
+	}()
 	s.eventsManager.start(quitChan)
 }
 
@@ -144,6 +167,97 @@ func (s *PersistentSyncerServer) ListenChanges(request *proto.ListenChangesReque
 			return nil
 		}
 	}
+}
+
+const (
+	defaultLockTTLSeconds = 30
+	maxLockTTLSeconds     = 300
+	maxRequestAge         = 5 * time.Minute
+	maxLockNameLength     = 256
+)
+
+func validateLockName(name string) error {
+	if name == "" {
+		return status.Errorf(codes.InvalidArgument, "lock_name must not be empty")
+	}
+	if len(name) > maxLockNameLength {
+		return status.Errorf(codes.InvalidArgument, "lock_name exceeds maximum length of %d", maxLockNameLength)
+	}
+	return nil
+}
+
+func validateInstanceID(instanceID string) error {
+	if _, err := uuid.Parse(instanceID); err != nil {
+		return status.Errorf(codes.InvalidArgument, "instance_id must be a valid UUID")
+	}
+	return nil
+}
+
+func validateRequestTime(requestTime uint32) error {
+	diff := time.Since(time.Unix(int64(requestTime), 0))
+	if diff.Abs() > maxRequestAge {
+		return status.Errorf(codes.InvalidArgument, "request time too far from server time")
+	}
+	return nil
+}
+
+func (s *PersistentSyncerServer) SetLock(ctx context.Context, msg *proto.SetLockRequest) (*proto.SetLockReply, error) {
+	log.Println("SetLock: started")
+	if err := validateLockName(msg.LockName); err != nil {
+		return nil, err
+	}
+	if err := validateInstanceID(msg.InstanceId); err != nil {
+		return nil, err
+	}
+	if err := validateRequestTime(msg.RequestTime); err != nil {
+		return nil, err
+	}
+	c, err := middleware.Authenticate(s.config, ctx, msg)
+	if err != nil {
+		log.Printf("SetLock completed with auth error: %v\n", err)
+		return nil, err
+	}
+	pubkey := c.Value(middleware.USER_PUBKEY_CONTEXT_KEY).(string)
+	log.Printf("SetLock: pubkey: %v, lock_name: %v, acquire: %v\n", pubkey, msg.LockName, msg.Acquire)
+
+	ttl := defaultLockTTLSeconds
+	if msg.TtlSeconds != nil {
+		ttl = min(int(*msg.TtlSeconds), maxLockTTLSeconds)
+	}
+
+	err = s.storage.SetLock(c, pubkey, msg.LockName, msg.InstanceId, msg.Acquire, uint32(ttl), msg.Exclusive)
+	if err != nil {
+		if err == store.ErrLockHeld {
+			return nil, status.Errorf(codes.FailedPrecondition, "lock held by another instance")
+		}
+		return nil, err
+	}
+	log.Println("SetLock: finished")
+	return &proto.SetLockReply{}, nil
+}
+
+func (s *PersistentSyncerServer) GetLock(ctx context.Context, msg *proto.GetLockRequest) (*proto.GetLockReply, error) {
+	log.Println("GetLock: started")
+	if err := validateLockName(msg.LockName); err != nil {
+		return nil, err
+	}
+	if err := validateRequestTime(msg.RequestTime); err != nil {
+		return nil, err
+	}
+	c, err := middleware.Authenticate(s.config, ctx, msg)
+	if err != nil {
+		log.Printf("GetLock completed with auth error: %v\n", err)
+		return nil, err
+	}
+	pubkey := c.Value(middleware.USER_PUBKEY_CONTEXT_KEY).(string)
+	log.Printf("GetLock: pubkey: %v, lock_name: %v\n", pubkey, msg.LockName)
+
+	locked, err := s.storage.HasActiveLock(c, pubkey, msg.LockName)
+	if err != nil {
+		return nil, err
+	}
+	log.Printf("GetLock: finished, locked: %v\n", locked)
+	return &proto.GetLockReply{Locked: locked}, nil
 }
 
 type notifyChange struct {
