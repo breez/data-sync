@@ -40,8 +40,12 @@ soft_limit = 1500
   [[services.ports]]
     handlers = ["tls", "http"]
     port = 442
-  
+
   [services.concurrency]
   type = "connections"
   hard_limit = 3000
   soft_limit = 1500
+
+[metrics]
+  port = 9091
+  path = "/metrics"

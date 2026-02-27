@@ -8,7 +8,10 @@ import (
 
 	"github.com/breez/data-sync/config"
 	"github.com/breez/data-sync/proto"
+	grpcprom "github.com/grpc-ecosystem/go-grpc-middleware/providers/prometheus"
 	"github.com/improbable-eng/grpc-web/go/grpcweb"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/rs/cors"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/keepalive"
@@ -32,10 +35,22 @@ func main() {
 	syncServer.Start(quitChan)
 	s := CreateServer(config, grpcListener, syncServer)
 	RunWebProxy(s, config)
+	RunMetricsServer(config)
 	log.Printf("Server listening at %s", config.GrpcListenAddress)
 	if err := s.Serve(grpcListener); err != nil {
 		log.Fatalf("failed to serve: %v", err)
 	}
+}
+
+func RunMetricsServer(config *config.Config) {
+	mux := http.NewServeMux()
+	mux.Handle("/metrics", promhttp.Handler())
+	log.Printf("Starting metrics server on %s", config.MetricsListenAddress)
+	go func() {
+		if err := http.ListenAndServe(config.MetricsListenAddress, mux); err != nil {
+			log.Fatalf("Failed to start metrics server: %v", err)
+		}
+	}()
 }
 
 func RunWebProxy(grpcServer *grpc.Server, config *config.Config) {
@@ -83,6 +98,14 @@ func RunWebProxy(grpcServer *grpc.Server, config *config.Config) {
 }
 
 func CreateServer(config *config.Config, listener net.Listener, syncServer proto.SyncerServer) *grpc.Server {
+	srvMetrics := grpcprom.NewServerMetrics(
+		grpcprom.WithServerHandlingTimeHistogram(),
+	)
+	// Intentionally ignoring error: concurrent tests re-register metrics on the
+	// default registry, causing MustRegister to panic. Safe to skip in production
+	// (single registration) and in tests (duplicate is harmless).
+	_ = prometheus.Register(srvMetrics)
+
 	s := grpc.NewServer(
 		grpc.MaxRecvMsgSize(256*1024), // 256 KB
 		grpc.MaxConcurrentStreams(5),  // limit streams per connection
@@ -94,7 +117,10 @@ func CreateServer(config *config.Config, listener net.Listener, syncServer proto
 			Time:    time.Second * 10,
 			Timeout: time.Second * 5,
 		}),
+		grpc.ChainUnaryInterceptor(srvMetrics.UnaryServerInterceptor()),
+		grpc.ChainStreamInterceptor(srvMetrics.StreamServerInterceptor()),
 	)
 	proto.RegisterSyncerServer(s, syncServer)
+	srvMetrics.InitializeMetrics(s)
 	return s
 }
