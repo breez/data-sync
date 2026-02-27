@@ -269,8 +269,8 @@ func server(ctx context.Context, config *config.Config) (proto.SyncerClient, fun
 	return client, closer
 }
 
-func signSetLock(t *testing.T, privateKey *btcec.PrivateKey, lockName, instanceID string, acquire bool, requestTime uint32) string {
-	toSign := fmt.Sprintf("%v-%v-%v-%v", lockName, instanceID, acquire, requestTime)
+func signSetLock(t *testing.T, privateKey *btcec.PrivateKey, lockName, instanceID string, acquire bool, exclusive bool, requestTime uint32) string {
+	toSign := fmt.Sprintf("%v-%v-%v-%v-%v", lockName, instanceID, acquire, exclusive, requestTime)
 	signature, err := middleware.SignMessage(privateKey, []byte(toSign))
 	require.NoError(t, err)
 	return signature
@@ -296,7 +296,7 @@ func TestSetLock_EmptyLockName(t *testing.T) {
 		InstanceId:  instanceID,
 		Acquire:     true,
 		RequestTime: requestTime,
-		Signature:   signSetLock(t, privateKey, "", instanceID, true, requestTime),
+		Signature:   signSetLock(t, privateKey, "", instanceID, true, false, requestTime),
 	})
 	require.Error(t, err)
 	require.Equal(t, codes.InvalidArgument, status.Code(err))
@@ -317,7 +317,7 @@ func TestSetLock_LockNameTooLong(t *testing.T) {
 		InstanceId:  instanceID,
 		Acquire:     true,
 		RequestTime: requestTime,
-		Signature:   signSetLock(t, privateKey, longName, instanceID, true, requestTime),
+		Signature:   signSetLock(t, privateKey, longName, instanceID, true, false, requestTime),
 	})
 	require.Error(t, err)
 	require.Equal(t, codes.InvalidArgument, status.Code(err))
@@ -336,7 +336,7 @@ func TestSetLock_InvalidInstanceID(t *testing.T) {
 		InstanceId:  "not-a-uuid",
 		Acquire:     true,
 		RequestTime: requestTime,
-		Signature:   signSetLock(t, privateKey, "test_lock", "not-a-uuid", true, requestTime),
+		Signature:   signSetLock(t, privateKey, "test_lock", "not-a-uuid", true, false, requestTime),
 	})
 	require.Error(t, err)
 	require.Equal(t, codes.InvalidArgument, status.Code(err))
@@ -356,7 +356,7 @@ func TestSetLock_StaleRequestTime(t *testing.T) {
 		InstanceId:  instanceID,
 		Acquire:     true,
 		RequestTime: staleTime,
-		Signature:   signSetLock(t, privateKey, "test_lock", instanceID, true, staleTime),
+		Signature:   signSetLock(t, privateKey, "test_lock", instanceID, true, false, staleTime),
 	})
 	require.Error(t, err)
 	require.Equal(t, codes.InvalidArgument, status.Code(err))
@@ -379,7 +379,7 @@ func TestSetLock_TTLCapped(t *testing.T) {
 		Acquire:     true,
 		TtlSeconds:  &hugeTTL,
 		RequestTime: requestTime,
-		Signature:   signSetLock(t, privateKey, "test_lock", instanceID, true, requestTime),
+		Signature:   signSetLock(t, privateKey, "test_lock", instanceID, true, false, requestTime),
 	})
 	require.NoError(t, err)
 
@@ -410,7 +410,7 @@ func TestSetLock_TTLExpiration(t *testing.T) {
 		Acquire:     true,
 		TtlSeconds:  &smallTTL,
 		RequestTime: requestTime,
-		Signature:   signSetLock(t, privateKey, "test_lock", instanceID, true, requestTime),
+		Signature:   signSetLock(t, privateKey, "test_lock", instanceID, true, false, requestTime),
 	})
 	require.NoError(t, err)
 
