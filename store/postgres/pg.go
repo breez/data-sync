@@ -205,6 +205,11 @@ func (s *PgSyncStorage) HasActiveLock(ctx context.Context, userID, lockName stri
 	return true, nil
 }
 
+// Pool returns the underlying pgxpool.Pool for use by the notification system.
+func (s *PgSyncStorage) Pool() *pgxpool.Pool {
+	return s.db
+}
+
 func (s *PgSyncStorage) DeleteExpiredLocks(ctx context.Context) error {
 	now := time.Now().Unix()
 	_, err := s.db.Exec(ctx, "DELETE FROM locks WHERE expires_at <= $1", now)
