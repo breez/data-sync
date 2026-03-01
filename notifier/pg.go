@@ -8,8 +8,12 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgxpool"
 )
+
+// PgNotifySender can execute a PostgreSQL NOTIFY on a named channel.
+type PgNotifySender interface {
+	PgNotify(ctx context.Context, channel, payload string) error
+}
 
 const (
 	pgChannel         = "data_sync_changes"
@@ -27,15 +31,15 @@ type pgPayload struct {
 // NOTIFY is sent through the pooled connection (fine for single statements).
 // LISTEN uses a direct connection that bypasses the connection pooler.
 type PGNotifier struct {
-	pool      *pgxpool.Pool
+	sender    PgNotifySender
 	directURL string
 	handler   ChangeHandler
 	cancel    context.CancelFunc
 }
 
-func NewPGNotifier(pool *pgxpool.Pool, directURL string, handler ChangeHandler) *PGNotifier {
+func NewPGNotifier(sender PgNotifySender, directURL string, handler ChangeHandler) *PGNotifier {
 	return &PGNotifier{
-		pool:      pool,
+		sender:    sender,
 		directURL: directURL,
 		handler:   handler,
 	}
@@ -51,8 +55,7 @@ func (n *PGNotifier) Notify(ctx context.Context, pubkey string, clientID *string
 	if err != nil {
 		return fmt.Errorf("failed to marshal notification payload: %w", err)
 	}
-	_, err = n.pool.Exec(ctx, "SELECT pg_notify($1, $2)", pgChannel, string(data))
-	if err != nil {
+	if err := n.sender.PgNotify(ctx, pgChannel, string(data)); err != nil {
 		return fmt.Errorf("pg_notify failed: %w", err)
 	}
 	return nil

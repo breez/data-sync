@@ -25,16 +25,26 @@ func TestMain(m *testing.M) {
 	os.Exit(m.Run())
 }
 
-func testPool(t *testing.T) *pgxpool.Pool {
+// poolSender wraps a pgxpool.Pool to satisfy PgNotifySender in tests.
+type poolSender struct {
+	pool *pgxpool.Pool
+}
+
+func (s *poolSender) PgNotify(ctx context.Context, channel, payload string) error {
+	_, err := s.pool.Exec(ctx, "SELECT pg_notify($1, $2)", channel, payload)
+	return err
+}
+
+func testSender(t *testing.T) PgNotifySender {
 	t.Helper()
 	pool, err := pgxpool.New(context.Background(), testConnStr)
 	require.NoError(t, err)
 	t.Cleanup(pool.Close)
-	return pool
+	return &poolSender{pool: pool}
 }
 
 func TestPGNotifier_CrossInstance(t *testing.T) {
-	pool := testPool(t)
+	sender := testSender(t)
 
 	// Channels to collect received notifications
 	receivedA := make(chan pgPayload, 10)
@@ -47,8 +57,8 @@ func TestPGNotifier_CrossInstance(t *testing.T) {
 		receivedB <- pgPayload{Pubkey: pubkey, ClientID: clientID}
 	}
 
-	notifierA := NewPGNotifier(pool, testConnStr, handlerA)
-	notifierB := NewPGNotifier(pool, testConnStr, handlerB)
+	notifierA := NewPGNotifier(sender, testConnStr, handlerA)
+	notifierB := NewPGNotifier(sender, testConnStr, handlerB)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -91,14 +101,14 @@ func TestPGNotifier_CrossInstance(t *testing.T) {
 }
 
 func TestPGNotifier_NilClientID(t *testing.T) {
-	pool := testPool(t)
+	sender := testSender(t)
 
 	received := make(chan pgPayload, 10)
 	handler := func(pubkey string, clientID *string) {
 		received <- pgPayload{Pubkey: pubkey, ClientID: clientID}
 	}
 
-	n := NewPGNotifier(pool, testConnStr, handler)
+	n := NewPGNotifier(sender, testConnStr, handler)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -121,10 +131,10 @@ func TestPGNotifier_NilClientID(t *testing.T) {
 }
 
 func TestPGNotifier_GracefulShutdown(t *testing.T) {
-	pool := testPool(t)
+	sender := testSender(t)
 
 	handler := func(pubkey string, clientID *string) {}
-	n := NewPGNotifier(pool, testConnStr, handler)
+	n := NewPGNotifier(sender, testConnStr, handler)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	require.NoError(t, n.Start(ctx))

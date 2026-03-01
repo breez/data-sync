@@ -206,8 +206,9 @@ func (s *PgSyncStorage) HasActiveLock(ctx context.Context, userID, lockName stri
 }
 
 // Pool returns the underlying pgxpool.Pool for use by the notification system.
-func (s *PgSyncStorage) Pool() *pgxpool.Pool {
-	return s.db
+func (s *PgSyncStorage) PgNotify(ctx context.Context, channel, payload string) error {
+	_, err := s.db.Exec(ctx, "SELECT pg_notify($1, $2)", channel, payload)
+	return err
 }
 
 func (s *PgSyncStorage) DeleteExpiredLocks(ctx context.Context) error {
