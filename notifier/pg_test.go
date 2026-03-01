@@ -2,38 +2,39 @@ package notifier
 
 import (
 	"context"
+	"log"
 	"os"
 	"testing"
 	"time"
 
+	"github.com/breez/data-sync/testutil"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/stretchr/testify/require"
 )
 
+var testConnStr string
+
+func TestMain(m *testing.M) {
+	connStr, terminate, err := testutil.StartPostgres(context.Background())
+	if err != nil {
+		log.Fatalf("failed to start PostgreSQL container: %v", err)
+	}
+	defer terminate()
+	testConnStr = connStr
+
+	os.Exit(m.Run())
+}
+
 func testPool(t *testing.T) *pgxpool.Pool {
 	t.Helper()
-	url := os.Getenv("TEST_PG_DATABASE_URL")
-	if url == "" {
-		t.Skip("TEST_PG_DATABASE_URL not set")
-	}
-	pool, err := pgxpool.New(context.Background(), url)
+	pool, err := pgxpool.New(context.Background(), testConnStr)
 	require.NoError(t, err)
 	t.Cleanup(pool.Close)
 	return pool
 }
 
-func testDirectURL(t *testing.T) string {
-	t.Helper()
-	url := os.Getenv("TEST_PG_DATABASE_URL")
-	if url == "" {
-		t.Skip("TEST_PG_DATABASE_URL not set")
-	}
-	return url
-}
-
 func TestPGNotifier_CrossInstance(t *testing.T) {
 	pool := testPool(t)
-	directURL := testDirectURL(t)
 
 	// Channels to collect received notifications
 	receivedA := make(chan pgPayload, 10)
@@ -46,8 +47,8 @@ func TestPGNotifier_CrossInstance(t *testing.T) {
 		receivedB <- pgPayload{Pubkey: pubkey, ClientID: clientID}
 	}
 
-	notifierA := NewPGNotifier(pool, directURL, handlerA)
-	notifierB := NewPGNotifier(pool, directURL, handlerB)
+	notifierA := NewPGNotifier(pool, testConnStr, handlerA)
+	notifierB := NewPGNotifier(pool, testConnStr, handlerB)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -91,14 +92,13 @@ func TestPGNotifier_CrossInstance(t *testing.T) {
 
 func TestPGNotifier_NilClientID(t *testing.T) {
 	pool := testPool(t)
-	directURL := testDirectURL(t)
 
 	received := make(chan pgPayload, 10)
 	handler := func(pubkey string, clientID *string) {
 		received <- pgPayload{Pubkey: pubkey, ClientID: clientID}
 	}
 
-	n := NewPGNotifier(pool, directURL, handler)
+	n := NewPGNotifier(pool, testConnStr, handler)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -122,10 +122,9 @@ func TestPGNotifier_NilClientID(t *testing.T) {
 
 func TestPGNotifier_GracefulShutdown(t *testing.T) {
 	pool := testPool(t)
-	directURL := testDirectURL(t)
 
 	handler := func(pubkey string, clientID *string) {}
-	n := NewPGNotifier(pool, directURL, handler)
+	n := NewPGNotifier(pool, testConnStr, handler)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	require.NoError(t, n.Start(ctx))
