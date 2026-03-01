@@ -78,6 +78,7 @@ func (s *PersistentSyncerServer) Start(quitChan chan struct{}) {
 	if err := s.storage.DeleteExpiredLocks(context.Background()); err != nil {
 		log.Printf("Failed to delete expired locks on startup: %v\n", err)
 	}
+	notifierCtx, notifierCancel := context.WithCancel(context.Background())
 	go func() {
 		ticker := time.NewTicker(5 * time.Minute)
 		defer ticker.Stop()
@@ -89,20 +90,15 @@ func (s *PersistentSyncerServer) Start(quitChan chan struct{}) {
 					log.Printf("Failed to delete expired locks: %v\n", err)
 				}
 			case <-quitChan:
+				notifierCancel()
+				s.notifier.Stop()
 				return
 			}
 		}
 	}()
 	s.eventsManager.start(quitChan)
 
-	// Start the distributed notifier listener
-	ctx, cancel := context.WithCancel(context.Background())
-	go func() {
-		<-quitChan
-		cancel()
-		s.notifier.Stop()
-	}()
-	if err := s.notifier.Start(ctx); err != nil {
+	if err := s.notifier.Start(notifierCtx); err != nil {
 		log.Printf("Failed to start notifier: %v\n", err)
 	}
 }
