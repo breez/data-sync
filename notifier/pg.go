@@ -70,9 +70,16 @@ func (n *PGNotifier) Notify(ctx context.Context, pubkey string, clientID *string
 	return nil
 }
 
-// Start begins the LISTEN loop in a background goroutine.
-// It reconnects with exponential backoff on connection failure.
+// Start validates the direct connection URL and begins the LISTEN loop in a
+// background goroutine. It returns an error if the initial connection fails,
+// preventing the server from running with a misconfigured notification URL.
 func (n *PGNotifier) Start(ctx context.Context) error {
+	conn, err := pgx.Connect(ctx, n.directURL)
+	if err != nil {
+		return fmt.Errorf("pgNotifier: failed to validate direct URL: %w", err)
+	}
+	conn.Close(context.Background())
+
 	ctx, n.cancel = context.WithCancel(ctx)
 	go n.listenLoop(ctx)
 	return nil
