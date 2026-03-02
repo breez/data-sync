@@ -88,12 +88,12 @@ func (s *PgSyncStorage) SetRecord(ctx context.Context, userID, id string, data [
 		}
 	}
 	if newRevision == 0 {
-		err := tx.QueryRow(ctx, "INSERT INTO user_revisions (user_id, revision) VALUES ($1, $2) RETURNING revision", userID, 1).Scan(&newRevision)
+		err := tx.QueryRow(ctx, "INSERT INTO user_revisions (user_id, revision, updated_at) VALUES ($1, $2, NOW()) RETURNING revision", userID, 1).Scan(&newRevision)
 		if err != nil {
 			return 0, fmt.Errorf("failed to insert store's revision: %w", err)
 		}
 	} else {
-		err := tx.QueryRow(ctx, "UPDATE user_revisions SET revision = revision + 1 WHERE user_id = $1 RETURNING revision", userID).Scan(&newRevision)
+		err := tx.QueryRow(ctx, "UPDATE user_revisions SET revision = revision + 1, updated_at = NOW() WHERE user_id = $1 RETURNING revision", userID).Scan(&newRevision)
 		if err != nil {
 			return 0, fmt.Errorf("failed to update store's revision: %w", err)
 		}
@@ -218,4 +218,22 @@ func (s *PgSyncStorage) DeleteExpiredLocks(ctx context.Context) error {
 		return fmt.Errorf("failed to delete expired locks: %w", err)
 	}
 	return nil
+}
+
+func (s *PgSyncStorage) ListModifiedUsers(ctx context.Context, since time.Time) ([]string, error) {
+	rows, err := s.db.Query(ctx, "SELECT user_id FROM user_revisions WHERE updated_at > $1", since)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query modified users: %w", err)
+	}
+	defer rows.Close()
+
+	var users []string
+	for rows.Next() {
+		var userID string
+		if err := rows.Scan(&userID); err != nil {
+			return nil, fmt.Errorf("failed to scan user_id: %w", err)
+		}
+		users = append(users, userID)
+	}
+	return users, nil
 }

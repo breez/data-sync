@@ -15,10 +15,16 @@ type PgNotifySender interface {
 	PgNotify(ctx context.Context, channel, payload string) error
 }
 
+// ModifiedUsersQuerier can list users modified since a given time.
+type ModifiedUsersQuerier interface {
+	ListModifiedUsers(ctx context.Context, since time.Time) ([]string, error)
+}
+
 const (
 	pgChannel         = "data_sync_changes"
 	reconnectDelay    = 1 * time.Second
 	maxReconnectDelay = 30 * time.Second
+	stableConnTime    = 2 * time.Minute
 )
 
 // pgPayload is the JSON structure sent as the NOTIFY payload.
@@ -31,17 +37,20 @@ type pgPayload struct {
 // NOTIFY is sent through the pooled connection (fine for single statements).
 // LISTEN uses a direct connection that bypasses the connection pooler.
 type PGNotifier struct {
-	sender    PgNotifySender
-	directURL string
-	handler   ChangeHandler
-	cancel    context.CancelFunc
+	sender        PgNotifySender
+	directURL     string
+	handler       ChangeHandler
+	cancel        context.CancelFunc
+	querier       ModifiedUsersQuerier
+	lastEventTime time.Time
 }
 
-func NewPGNotifier(sender PgNotifySender, directURL string, handler ChangeHandler) *PGNotifier {
+func NewPGNotifier(sender PgNotifySender, directURL string, handler ChangeHandler, querier ModifiedUsersQuerier) *PGNotifier {
 	return &PGNotifier{
 		sender:    sender,
 		directURL: directURL,
 		handler:   handler,
+		querier:   querier,
 	}
 }
 
@@ -78,15 +87,22 @@ func (n *PGNotifier) Stop() {
 
 func (n *PGNotifier) listenLoop(ctx context.Context) {
 	delay := reconnectDelay
+	hasConnectedBefore := false
 	for {
 		if ctx.Err() != nil {
 			return
 		}
-		err := n.listenOnce(ctx)
+		connStart := time.Now()
+		err := n.listenOnce(ctx, hasConnectedBefore)
 		if ctx.Err() != nil {
 			return
 		}
+		// Reset backoff if the connection was stable for long enough
+		if time.Since(connStart) >= stableConnTime {
+			delay = reconnectDelay
+		}
 		log.Printf("pgNotifier: listen connection lost: %v, reconnecting in %v", err, delay)
+		hasConnectedBefore = true
 		select {
 		case <-time.After(delay):
 			delay = min(delay*2, maxReconnectDelay)
@@ -96,7 +112,7 @@ func (n *PGNotifier) listenLoop(ctx context.Context) {
 	}
 }
 
-func (n *PGNotifier) listenOnce(ctx context.Context) error {
+func (n *PGNotifier) listenOnce(ctx context.Context, isReconnect bool) error {
 	conn, err := pgx.Connect(ctx, n.directURL)
 	if err != nil {
 		return fmt.Errorf("failed to connect for LISTEN: %w", err)
@@ -109,11 +125,20 @@ func (n *PGNotifier) listenOnce(ctx context.Context) error {
 	}
 	log.Printf("pgNotifier: listening on channel %q", pgChannel)
 
+	// On reconnect, recover missed notifications
+	if isReconnect && n.querier != nil && !n.lastEventTime.IsZero() {
+		n.recoverMissed(ctx)
+	}
+
+	n.lastEventTime = time.Now()
+
 	for {
 		notification, err := conn.WaitForNotification(ctx)
 		if err != nil {
 			return fmt.Errorf("WaitForNotification: %w", err)
 		}
+
+		n.lastEventTime = time.Now()
 
 		var p pgPayload
 		if err := json.Unmarshal([]byte(notification.Payload), &p); err != nil {
@@ -122,5 +147,19 @@ func (n *PGNotifier) listenOnce(ctx context.Context) error {
 		}
 
 		n.handler(p.Pubkey, p.ClientID)
+	}
+}
+
+func (n *PGNotifier) recoverMissed(ctx context.Context) {
+	users, err := n.querier.ListModifiedUsers(ctx, n.lastEventTime)
+	if err != nil {
+		log.Printf("pgNotifier: failed to query modified users for recovery: %v", err)
+		return
+	}
+	if len(users) > 0 {
+		log.Printf("pgNotifier: recovering %d users with changes during disconnection", len(users))
+	}
+	for _, userID := range users {
+		n.handler(userID, nil)
 	}
 }

@@ -46,7 +46,7 @@ func NewPersistentSyncerServer(config *config.Config) (*PersistentSyncerServer, 
 		storage = pgStorage
 
 		if config.PgDirectUrl != "" {
-			changeNotifier = notifier.NewPGNotifier(pgStorage, config.PgDirectUrl, em.notifyChange)
+			changeNotifier = notifier.NewPGNotifier(pgStorage, config.PgDirectUrl, em.notifyChange, pgStorage)
 			log.Println("distributed notifications enabled via PostgreSQL LISTEN/NOTIFY")
 		} else {
 			changeNotifier = notifier.NewLocalNotifier(em.notifyChange)

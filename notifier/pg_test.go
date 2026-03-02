@@ -4,6 +4,7 @@ import (
 	"context"
 	"log"
 	"os"
+	"sync"
 	"testing"
 	"time"
 
@@ -57,8 +58,8 @@ func TestPGNotifier_CrossInstance(t *testing.T) {
 		receivedB <- pgPayload{Pubkey: pubkey, ClientID: clientID}
 	}
 
-	notifierA := NewPGNotifier(sender, testConnStr, handlerA)
-	notifierB := NewPGNotifier(sender, testConnStr, handlerB)
+	notifierA := NewPGNotifier(sender, testConnStr, handlerA, nil)
+	notifierB := NewPGNotifier(sender, testConnStr, handlerB, nil)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -108,7 +109,7 @@ func TestPGNotifier_NilClientID(t *testing.T) {
 		received <- pgPayload{Pubkey: pubkey, ClientID: clientID}
 	}
 
-	n := NewPGNotifier(sender, testConnStr, handler)
+	n := NewPGNotifier(sender, testConnStr, handler, nil)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -134,7 +135,7 @@ func TestPGNotifier_GracefulShutdown(t *testing.T) {
 	sender := testSender(t)
 
 	handler := func(pubkey string, clientID *string) {}
-	n := NewPGNotifier(sender, testConnStr, handler)
+	n := NewPGNotifier(sender, testConnStr, handler, nil)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	require.NoError(t, n.Start(ctx))
@@ -143,4 +144,96 @@ func TestPGNotifier_GracefulShutdown(t *testing.T) {
 	// Stopping should not hang
 	cancel()
 	n.Stop()
+}
+
+// mockQuerier records calls to ListModifiedUsers and returns preconfigured users.
+type mockQuerier struct {
+	mu       sync.Mutex
+	calls    []time.Time
+	response []string
+}
+
+func (m *mockQuerier) ListModifiedUsers(_ context.Context, since time.Time) ([]string, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.calls = append(m.calls, since)
+	return m.response, nil
+}
+
+func (m *mockQuerier) getCalls() []time.Time {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return append([]time.Time{}, m.calls...)
+}
+
+func TestPGNotifier_ReconnectRecovery(t *testing.T) {
+	sender := testSender(t)
+
+	received := make(chan string, 10)
+	handler := func(pubkey string, clientID *string) {
+		received <- pubkey
+	}
+
+	modifiedUsers := []string{"user-A", "user-B"}
+	querier := &mockQuerier{response: modifiedUsers}
+
+	n := NewPGNotifier(sender, testConnStr, handler, querier)
+
+	// Simulate a prior connection by setting lastEventTime in the past.
+	n.lastEventTime = time.Now().Add(-5 * time.Second)
+
+	// Call listenOnce with isReconnect=true. It will connect, recover missed
+	// users, then block on WaitForNotification. We cancel the context to
+	// unblock it after giving it time to run recovery.
+	ctx, cancel := context.WithCancel(context.Background())
+
+	done := make(chan error, 1)
+	go func() {
+		done <- n.listenOnce(ctx, true)
+	}()
+
+	// Collect the recovered user notifications
+	var recoveredUsers []string
+	for i := 0; i < len(modifiedUsers); i++ {
+		select {
+		case user := <-received:
+			recoveredUsers = append(recoveredUsers, user)
+		case <-time.After(5 * time.Second):
+			t.Fatalf("timed out waiting for recovered user %d", i)
+		}
+	}
+
+	require.ElementsMatch(t, modifiedUsers, recoveredUsers)
+
+	// Verify the querier was called exactly once
+	calls := querier.getCalls()
+	require.Len(t, calls, 1)
+
+	cancel()
+	<-done
+}
+
+func TestPGNotifier_NoRecoveryOnFirstConnect(t *testing.T) {
+	sender := testSender(t)
+
+	handler := func(pubkey string, clientID *string) {}
+	querier := &mockQuerier{response: []string{"should-not-appear"}}
+
+	n := NewPGNotifier(sender, testConnStr, handler, querier)
+
+	// First connection (isReconnect=false) should NOT call the querier
+	ctx, cancel := context.WithCancel(context.Background())
+
+	done := make(chan error, 1)
+	go func() {
+		done <- n.listenOnce(ctx, false)
+	}()
+
+	// Give it time to connect and start listening
+	time.Sleep(300 * time.Millisecond)
+	cancel()
+	<-done
+
+	calls := querier.getCalls()
+	require.Empty(t, calls, "querier should not be called on first connection")
 }
