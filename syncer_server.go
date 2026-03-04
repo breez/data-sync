@@ -99,7 +99,7 @@ func (s *PersistentSyncerServer) Start(quitChan chan struct{}) {
 	s.eventsManager.start(quitChan)
 
 	if err := s.notifier.Start(notifierCtx); err != nil {
-		log.Printf("Failed to start notifier: %v\n", err)
+		log.Fatalf("Failed to start notifier: %v\n", err)
 	}
 }
 
