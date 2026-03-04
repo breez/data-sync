@@ -9,12 +9,13 @@ import (
 	"time"
 
 	"github.com/breez/data-sync/config"
-	"github.com/google/uuid"
 	"github.com/breez/data-sync/middleware"
+	"github.com/breez/data-sync/notifier"
 	"github.com/breez/data-sync/proto"
 	"github.com/breez/data-sync/store"
 	"github.com/breez/data-sync/store/postgres"
 	"github.com/breez/data-sync/store/sqlite"
+	"github.com/google/uuid"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -25,18 +26,31 @@ type PersistentSyncerServer struct {
 	config        *config.Config
 	eventsManager *eventsManager
 	storage       store.SyncStorage
+	notifier      notifier.ChangeNotifier
 }
 
 func NewPersistentSyncerServer(config *config.Config) (*PersistentSyncerServer, error) {
 
 	var storage store.SyncStorage
+	var changeNotifier notifier.ChangeNotifier
 	var err error
+
+	em := newEventsManager()
 
 	if config.PgDatabaseUrl != "" {
 		log.Printf("creating postgres storage: %v\n", config.PgDatabaseUrl)
-		storage, err = postgres.NewPGSyncStorage(config.PgDatabaseUrl)
+		pgStorage, err := postgres.NewPGSyncStorage(config.PgDatabaseUrl)
 		if err != nil {
 			return nil, err
+		}
+		storage = pgStorage
+
+		if config.PgDirectUrl != "" {
+			changeNotifier = notifier.NewPGNotifier(pgStorage, config.PgDirectUrl, em.notifyChange, pgStorage)
+			log.Println("distributed notifications enabled via PostgreSQL LISTEN/NOTIFY")
+		} else {
+			changeNotifier = notifier.NewLocalNotifier(em.notifyChange)
+			log.Println("WARNING: DATABASE_DIRECT_URL not set, distributed notifications disabled")
 		}
 	} else {
 		log.Printf("creating sqlite storage: %v\n", config.SQLiteDirPath)
@@ -48,12 +62,14 @@ func NewPersistentSyncerServer(config *config.Config) (*PersistentSyncerServer, 
 		if err != nil {
 			return nil, err
 		}
+		changeNotifier = notifier.NewLocalNotifier(em.notifyChange)
 	}
 
 	return &PersistentSyncerServer{
 		config:        config,
-		eventsManager: newEventsManager(),
+		eventsManager: em,
 		storage:       storage,
+		notifier:      changeNotifier,
 	}, nil
 }
 
@@ -62,6 +78,7 @@ func (s *PersistentSyncerServer) Start(quitChan chan struct{}) {
 	if err := s.storage.DeleteExpiredLocks(context.Background()); err != nil {
 		log.Printf("Failed to delete expired locks on startup: %v\n", err)
 	}
+	notifierCtx, notifierCancel := context.WithCancel(context.Background())
 	go func() {
 		ticker := time.NewTicker(5 * time.Minute)
 		defer ticker.Stop()
@@ -73,11 +90,17 @@ func (s *PersistentSyncerServer) Start(quitChan chan struct{}) {
 					log.Printf("Failed to delete expired locks: %v\n", err)
 				}
 			case <-quitChan:
+				notifierCancel()
+				s.notifier.Stop()
 				return
 			}
 		}
 	}()
 	s.eventsManager.start(quitChan)
+
+	if err := s.notifier.Start(notifierCtx); err != nil {
+		log.Fatalf("Failed to start notifier: %v\n", err)
+	}
 }
 
 func (s *PersistentSyncerServer) SetRecord(ctx context.Context, msg *proto.SetRecordRequest) (*proto.SetRecordReply, error) {
@@ -101,7 +124,9 @@ func (s *PersistentSyncerServer) SetRecord(ctx context.Context, msg *proto.SetRe
 	}
 	newRecord := msg.Record
 	newRecord.Revision = newRevision
-	s.eventsManager.notifyChange(c.Value(middleware.USER_PUBKEY_CONTEXT_KEY).(string), msg.ClientId)
+	if err := s.notifier.Notify(c, pubkey, msg.ClientId); err != nil {
+		log.Printf("SetRecord: failed to broadcast notification: %v\n", err)
+	}
 	log.Println("SetRecord: finished")
 	return &proto.SetRecordReply{
 		Status:      proto.SetRecordStatus_SUCCESS,

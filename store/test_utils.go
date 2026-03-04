@@ -25,8 +25,8 @@ func (s *StoreTest) TestAddRecords(t *testing.T, storage SyncStorage) {
 	records, err := storage.ListChanges(context.Background(), testStoreID, 0)
 	require.NoError(t, err, "failed to call list changes")
 	require.Equal(t, records, []StoredRecord{
-		{Id: "a1", Data: []byte("data1"), Revision: 1},
-		{Id: "a2", Data: []byte("data2"), Revision: 2},
+		{Id: "a1", Data: []byte("data1"), Revision: 1, SchemaVersion: "0.0.1"},
+		{Id: "a2", Data: []byte("data2"), Revision: 2, SchemaVersion: "0.0.1"},
 	})
 
 	// Test different store with same id
@@ -49,7 +49,7 @@ func (s *StoreTest) TestUpdateRecords(t *testing.T, storage SyncStorage) {
 	records, err := storage.ListChanges(context.Background(), testStoreID, 0)
 	require.NoError(t, err, "failed to call list changes")
 	require.Equal(t, records, []StoredRecord{
-		{Id: "a1", Data: []byte("data2"), Revision: 2},
+		{Id: "a1", Data: []byte("data2"), Revision: 2, SchemaVersion: "0.0.1"},
 	})
 }
 

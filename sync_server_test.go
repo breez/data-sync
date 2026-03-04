@@ -8,12 +8,15 @@ import (
 	"net"
 	"os"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/breez/data-sync/config"
 	"github.com/breez/data-sync/middleware"
 	"github.com/breez/data-sync/proto"
+	"github.com/breez/data-sync/testutil"
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
@@ -269,8 +272,8 @@ func server(ctx context.Context, config *config.Config) (proto.SyncerClient, fun
 	return client, closer
 }
 
-func signSetLock(t *testing.T, privateKey *btcec.PrivateKey, lockName, instanceID string, acquire bool, requestTime uint32) string {
-	toSign := fmt.Sprintf("%v-%v-%v-%v", lockName, instanceID, acquire, requestTime)
+func signSetLock(t *testing.T, privateKey *btcec.PrivateKey, lockName, instanceID string, acquire bool, exclusive bool, requestTime uint32) string {
+	toSign := fmt.Sprintf("%v-%v-%v-%v-%v", lockName, instanceID, acquire, exclusive, requestTime)
 	signature, err := middleware.SignMessage(privateKey, []byte(toSign))
 	require.NoError(t, err)
 	return signature
@@ -296,7 +299,7 @@ func TestSetLock_EmptyLockName(t *testing.T) {
 		InstanceId:  instanceID,
 		Acquire:     true,
 		RequestTime: requestTime,
-		Signature:   signSetLock(t, privateKey, "", instanceID, true, requestTime),
+		Signature:   signSetLock(t, privateKey, "", instanceID, true, false, requestTime),
 	})
 	require.Error(t, err)
 	require.Equal(t, codes.InvalidArgument, status.Code(err))
@@ -317,7 +320,7 @@ func TestSetLock_LockNameTooLong(t *testing.T) {
 		InstanceId:  instanceID,
 		Acquire:     true,
 		RequestTime: requestTime,
-		Signature:   signSetLock(t, privateKey, longName, instanceID, true, requestTime),
+		Signature:   signSetLock(t, privateKey, longName, instanceID, true, false, requestTime),
 	})
 	require.Error(t, err)
 	require.Equal(t, codes.InvalidArgument, status.Code(err))
@@ -336,7 +339,7 @@ func TestSetLock_InvalidInstanceID(t *testing.T) {
 		InstanceId:  "not-a-uuid",
 		Acquire:     true,
 		RequestTime: requestTime,
-		Signature:   signSetLock(t, privateKey, "test_lock", "not-a-uuid", true, requestTime),
+		Signature:   signSetLock(t, privateKey, "test_lock", "not-a-uuid", true, false, requestTime),
 	})
 	require.Error(t, err)
 	require.Equal(t, codes.InvalidArgument, status.Code(err))
@@ -356,7 +359,7 @@ func TestSetLock_StaleRequestTime(t *testing.T) {
 		InstanceId:  instanceID,
 		Acquire:     true,
 		RequestTime: staleTime,
-		Signature:   signSetLock(t, privateKey, "test_lock", instanceID, true, staleTime),
+		Signature:   signSetLock(t, privateKey, "test_lock", instanceID, true, false, staleTime),
 	})
 	require.Error(t, err)
 	require.Equal(t, codes.InvalidArgument, status.Code(err))
@@ -379,7 +382,7 @@ func TestSetLock_TTLCapped(t *testing.T) {
 		Acquire:     true,
 		TtlSeconds:  &hugeTTL,
 		RequestTime: requestTime,
-		Signature:   signSetLock(t, privateKey, "test_lock", instanceID, true, requestTime),
+		Signature:   signSetLock(t, privateKey, "test_lock", instanceID, true, false, requestTime),
 	})
 	require.NoError(t, err)
 
@@ -410,7 +413,7 @@ func TestSetLock_TTLExpiration(t *testing.T) {
 		Acquire:     true,
 		TtlSeconds:  &smallTTL,
 		RequestTime: requestTime,
-		Signature:   signSetLock(t, privateKey, "test_lock", instanceID, true, requestTime),
+		Signature:   signSetLock(t, privateKey, "test_lock", instanceID, true, false, requestTime),
 	})
 	require.NoError(t, err)
 
@@ -468,4 +471,146 @@ func TestGetLock_StaleRequestTime(t *testing.T) {
 	})
 	require.Error(t, err)
 	require.Equal(t, codes.InvalidArgument, status.Code(err))
+}
+
+func TestPgNotifyIntegration(t *testing.T) {
+	ctx := context.Background()
+	connStr := testutil.MustStartPostgres(t)
+
+	cfg := &config.Config{
+		PgDatabaseUrl: connStr,
+		PgDirectUrl:   connStr,
+	}
+
+	client, closer := server(ctx, cfg)
+	defer closer()
+
+	const numUsers = 50
+	const numChanges = 10
+
+	// Generate a private key per user.
+	privateKeys := make([]*btcec.PrivateKey, numUsers)
+	for i := range privateKeys {
+		pk, err := btcec.NewPrivateKey()
+		require.NoError(t, err)
+		privateKeys[i] = pk
+	}
+
+	// For each user open a ListenChanges stream (the "listener" client).
+	type listenerInfo struct {
+		stream proto.Syncer_ListenChangesClient
+		cancel context.CancelFunc
+	}
+	listeners := make([]listenerInfo, numUsers)
+	for i := 0; i < numUsers; i++ {
+		streamCtx, cancel := context.WithCancel(ctx)
+		requestTime := uint32(time.Now().Unix())
+		sig, err := middleware.SignMessage(privateKeys[i], []byte(fmt.Sprintf("%v", requestTime)))
+		require.NoError(t, err)
+
+		stream, err := client.ListenChanges(streamCtx, &proto.ListenChangesRequest{
+			RequestTime: requestTime,
+			Signature:   sig,
+		})
+		require.NoError(t, err)
+
+		// Consume the initial keepalive notification.
+		_, err = stream.Recv()
+		require.NoError(t, err)
+
+		listeners[i] = listenerInfo{stream: stream, cancel: cancel}
+	}
+
+	// Background goroutines count incoming notifications.
+	counts := make([]int64, numUsers)
+	var listenWg sync.WaitGroup
+	for i := 0; i < numUsers; i++ {
+		listenWg.Add(1)
+		go func(idx int) {
+			defer listenWg.Done()
+			for {
+				_, err := listeners[idx].stream.Recv()
+				if err != nil {
+					return
+				}
+				atomic.AddInt64(&counts[idx], 1)
+			}
+		}(i)
+	}
+
+	// Pre-create all SetRecord requests on the test goroutine to
+	// avoid calling require (t.FailNow) from child goroutines.
+	allRequests := make([][]*proto.SetRecordRequest, numUsers)
+	for i := 0; i < numUsers; i++ {
+		allRequests[i] = make([]*proto.SetRecordRequest, numChanges)
+		for j := 0; j < numChanges; j++ {
+			allRequests[i][j] = createSetRecordRequest(t, privateKeys[i], &proto.Record{
+				Id:       fmt.Sprintf("record-%d", i),
+				Revision: uint64(j),
+				Data:     []byte(fmt.Sprintf("data-%d-%d", i, j)),
+			})
+		}
+	}
+
+	// Fire all writers in parallel. Retry on serialization errors since
+	// PostgreSQL serializable isolation can produce false conflicts under
+	// high concurrency.
+	writeErrors := make(chan error, numUsers)
+	var writeWg sync.WaitGroup
+	for i := 0; i < numUsers; i++ {
+		writeWg.Add(1)
+		go func(idx int) {
+			defer writeWg.Done()
+			for j := 0; j < numChanges; j++ {
+				var resp *proto.SetRecordReply
+				var err error
+				for attempt := 0; attempt < 10; attempt++ {
+					resp, err = client.SetRecord(ctx, allRequests[idx][j])
+					if err == nil {
+						break
+					}
+					if strings.Contains(err.Error(), "could not serialize access") {
+						time.Sleep(time.Duration(attempt+1) * 10 * time.Millisecond)
+						continue
+					}
+					break
+				}
+				if err != nil {
+					writeErrors <- fmt.Errorf("user %d change %d: %w", idx, j, err)
+					return
+				}
+				if resp.Status != proto.SetRecordStatus_SUCCESS {
+					writeErrors <- fmt.Errorf("user %d change %d: got status %v", idx, j, resp.Status)
+					return
+				}
+			}
+		}(i)
+	}
+	writeWg.Wait()
+	close(writeErrors)
+	for err := range writeErrors {
+		t.Fatal(err)
+	}
+
+	// Wait for all notifications to propagate through PG LISTEN/NOTIFY.
+	require.Eventually(t, func() bool {
+		for i := 0; i < numUsers; i++ {
+			if atomic.LoadInt64(&counts[i]) < numChanges {
+				return false
+			}
+		}
+		return true
+	}, 30*time.Second, 100*time.Millisecond)
+
+	// Tear down listener streams.
+	for i := 0; i < numUsers; i++ {
+		listeners[i].cancel()
+	}
+	listenWg.Wait()
+
+	// Verify each user received exactly numChanges notifications.
+	for i := 0; i < numUsers; i++ {
+		require.Equal(t, int64(numChanges), atomic.LoadInt64(&counts[i]),
+			"user %d: expected %d notifications", i, numChanges)
+	}
 }
