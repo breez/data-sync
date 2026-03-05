@@ -65,6 +65,10 @@ func RunWebProxy(grpcServer *grpc.Server, config *config.Config) {
 	corsHandler := cors.AllowAll().Handler(handler)
 
 	// Set up HTTP routes
+	httpMux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte("OK"))
+	})
 	httpMux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte("gRPC-Web service is running!"))
 	})
