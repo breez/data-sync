@@ -82,6 +82,9 @@ func (s *PersistentSyncerServer) Start(quitChan chan struct{}) {
 
 func (s *PersistentSyncerServer) SetRecord(ctx context.Context, msg *proto.SetRecordRequest) (*proto.SetRecordReply, error) {
 	log.Println("SetRecord: started")
+	if err := validateRequestTime(msg.RequestTime); err != nil {
+		return nil, err
+	}
 	c, err := middleware.Authenticate(s.config, ctx, msg)
 	if err != nil {
 		log.Printf("SetRecord completed with auth error: %v\n", err)
@@ -111,6 +114,9 @@ func (s *PersistentSyncerServer) SetRecord(ctx context.Context, msg *proto.SetRe
 
 func (s *PersistentSyncerServer) ListChanges(ctx context.Context, msg *proto.ListChangesRequest) (*proto.ListChangesReply, error) {
 	log.Println("ListChanges: started")
+	if err := validateRequestTime(msg.RequestTime); err != nil {
+		return nil, err
+	}
 	c, err := middleware.Authenticate(s.config, ctx, msg)
 	if err != nil {
 		log.Printf("ListChanges completed with auth error: %v\n", err)
@@ -138,6 +144,9 @@ func (s *PersistentSyncerServer) ListChanges(ctx context.Context, msg *proto.Lis
 }
 
 func (s *PersistentSyncerServer) ListenChanges(request *proto.ListenChangesRequest, stream proto.Syncer_ListenChangesServer) error {
+	if err := validateRequestTime(request.RequestTime); err != nil {
+		return err
+	}
 	context, err := middleware.Authenticate(s.config, stream.Context(), request)
 	if err != nil {
 		return err
