@@ -347,7 +347,11 @@ func (c *eventsManager) start(quitChan chan struct{}) {
 				if s, ok := msg.(*notifyChange); ok {
 					log.Printf("eventsManager: notifying change for user %v\n", s.pubkey)
 					for _, sub := range c.streams[s.pubkey] {
-						sub.eventsChan <- &proto.Notification{ClientId: s.clientId}
+						select {
+						case sub.eventsChan <- &proto.Notification{ClientId: s.clientId}:
+						default:
+							log.Printf("eventsManager: dropping notification for user %v subscription %d: channel full\n", s.pubkey, sub.id)
+						}
 					}
 				}
 			case <-quitChan:
