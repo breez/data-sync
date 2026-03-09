@@ -80,8 +80,24 @@ func (s *PersistentSyncerServer) Start(quitChan chan struct{}) {
 	s.eventsManager.start(quitChan)
 }
 
+func validateRecord(record *proto.Record) error {
+	if record == nil {
+		return status.Errorf(codes.InvalidArgument, "record must not be empty")
+	}
+	if len(record.Id) > maxRecordIDLength {
+		return status.Errorf(codes.InvalidArgument, "record id exceeds maximum length of %d", maxRecordIDLength)
+	}
+	if len(record.Data) > maxRecordDataSize {
+		return status.Errorf(codes.InvalidArgument, "record data exceeds maximum size of %d bytes", maxRecordDataSize)
+	}
+	return nil
+}
+
 func (s *PersistentSyncerServer) SetRecord(ctx context.Context, msg *proto.SetRecordRequest) (*proto.SetRecordReply, error) {
 	log.Println("SetRecord: started")
+	if err := validateRecord(msg.Record); err != nil {
+		return nil, err
+	}
 	if err := validateRequestTime(msg.RequestTime); err != nil {
 		return nil, err
 	}
@@ -183,6 +199,8 @@ const (
 	maxLockTTLSeconds     = 300
 	maxRequestAge         = 5 * time.Minute
 	maxLockNameLength     = 256
+	maxRecordDataSize     = 65536 // 64 KB
+	maxRecordIDLength     = 64
 )
 
 func validateLockName(name string) error {
