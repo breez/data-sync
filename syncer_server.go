@@ -9,12 +9,12 @@ import (
 	"time"
 
 	"github.com/breez/data-sync/config"
-	"github.com/google/uuid"
 	"github.com/breez/data-sync/middleware"
 	"github.com/breez/data-sync/proto"
 	"github.com/breez/data-sync/store"
 	"github.com/breez/data-sync/store/postgres"
 	"github.com/breez/data-sync/store/sqlite"
+	"github.com/google/uuid"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -33,7 +33,7 @@ func NewPersistentSyncerServer(config *config.Config) (*PersistentSyncerServer, 
 	var err error
 
 	if config.PgDatabaseUrl != "" {
-		log.Printf("creating postgres storage: %v\n", config.PgDatabaseUrl)
+		log.Printf("creating postgres storage\n")
 		storage, err = postgres.NewPGSyncStorage(config.PgDatabaseUrl)
 		if err != nil {
 			return nil, err
