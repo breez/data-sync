@@ -199,6 +199,7 @@ func (s *PersistentSyncerServer) ListenChanges(request *proto.ListenChangesReque
 
 const (
 	defaultLockTTLSeconds  = 30
+	minLockTTLSeconds      = 1
 	maxLockTTLSeconds      = 300
 	maxRequestAge          = 5 * time.Minute
 	maxLockNameLength      = 256
@@ -253,6 +254,9 @@ func (s *PersistentSyncerServer) SetLock(ctx context.Context, msg *proto.SetLock
 
 	ttl := defaultLockTTLSeconds
 	if msg.TtlSeconds != nil {
+		if int(*msg.TtlSeconds) < minLockTTLSeconds {
+			return nil, status.Errorf(codes.InvalidArgument, "ttl_seconds must be at least %d", minLockTTLSeconds)
+		}
 		ttl = min(int(*msg.TtlSeconds), maxLockTTLSeconds)
 	}
 
