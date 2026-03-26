@@ -22,7 +22,7 @@ func (s *StoreTest) TestAddRecords(t *testing.T, storage SyncStorage) {
 	require.NoError(t, err, "failed to call SetRecord a2")
 	require.Equal(t, newRevision, uint64(2))
 
-	records, err := storage.ListChanges(context.Background(), testStoreID, 0)
+	records, err := storage.ListChanges(context.Background(), testStoreID, 0, 100)
 	require.NoError(t, err, "failed to call list changes")
 	require.Equal(t, records, []StoredRecord{
 		{Id: "a1", Data: []byte("data1"), Revision: 1},
@@ -46,7 +46,7 @@ func (s *StoreTest) TestUpdateRecords(t *testing.T, storage SyncStorage) {
 	require.NoError(t, err, "failed to call SetRecord a2")
 	require.Equal(t, newRevision, uint64(2))
 
-	records, err := storage.ListChanges(context.Background(), testStoreID, 0)
+	records, err := storage.ListChanges(context.Background(), testStoreID, 0, 100)
 	require.NoError(t, err, "failed to call list changes")
 	require.Equal(t, records, []StoredRecord{
 		{Id: "a1", Data: []byte("data2"), Revision: 2},

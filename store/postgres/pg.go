@@ -119,9 +119,9 @@ func (s *PgSyncStorage) SetRecord(ctx context.Context, userID, id string, data [
 	return newRevision, nil
 }
 
-func (s *PgSyncStorage) ListChanges(ctx context.Context, userID string, sinceRevision uint64) ([]store.StoredRecord, error) {
+func (s *PgSyncStorage) ListChanges(ctx context.Context, userID string, sinceRevision uint64, limit int) ([]store.StoredRecord, error) {
 
-	rows, err := s.db.Query(ctx, "SELECT id, data, revision, schema_version FROM records WHERE user_id = $1 AND revision > $2", userID, sinceRevision)
+	rows, err := s.db.Query(ctx, "SELECT id, data, revision, schema_version FROM records WHERE user_id = $1 AND revision > $2 ORDER BY revision ASC LIMIT $3", userID, sinceRevision, limit)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query records: %w", err)
 	}

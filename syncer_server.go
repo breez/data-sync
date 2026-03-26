@@ -143,7 +143,7 @@ func (s *PersistentSyncerServer) ListChanges(ctx context.Context, msg *proto.Lis
 	}
 	pubkey := c.Value(middleware.USER_PUBKEY_CONTEXT_KEY).(string)
 	log.Printf("ListChanges: pubkey: %v\n", pubkey)
-	changed, err := s.storage.ListChanges(c, pubkey, msg.SinceRevision)
+	changed, err := s.storage.ListChanges(c, pubkey, msg.SinceRevision, maxListChangesLimit)
 	if err != nil {
 		return nil, err
 	}
@@ -203,6 +203,7 @@ const (
 	maxLockTTLSeconds      = 300
 	maxRequestAge          = 5 * time.Minute
 	maxLockNameLength      = 256
+	maxListChangesLimit    = 1000
 	maxRecordDataSize      = 65536 // 64 KB
 	maxRecordIDLength      = 64
 	maxSchemaVersionLength = 15

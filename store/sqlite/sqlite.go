@@ -176,9 +176,9 @@ func (s *SQLiteSyncStorage) DeleteExpiredLocks(ctx context.Context) error {
 	return nil
 }
 
-func (s *SQLiteSyncStorage) ListChanges(ctx context.Context, userID string, sinceRevision uint64) ([]store.StoredRecord, error) {
+func (s *SQLiteSyncStorage) ListChanges(ctx context.Context, userID string, sinceRevision uint64, limit int) ([]store.StoredRecord, error) {
 
-	rows, err := s.db.Query("SELECT id, data, revision, schema_version FROM records WHERE user_id = ? AND revision > ?", userID, sinceRevision)
+	rows, err := s.db.Query("SELECT id, data, revision, schema_version FROM records WHERE user_id = ? AND revision > ? ORDER BY revision ASC LIMIT ?", userID, sinceRevision, limit)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query records: %w", err)
 	}
