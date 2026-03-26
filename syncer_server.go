@@ -90,6 +90,9 @@ func validateRecord(record *proto.Record) error {
 	if len(record.Data) > maxRecordDataSize {
 		return status.Errorf(codes.InvalidArgument, "record data exceeds maximum size of %d bytes", maxRecordDataSize)
 	}
+	if len(record.SchemaVersion) > maxSchemaVersionLength {
+		return status.Errorf(codes.InvalidArgument, "record schema_version exceeds maximum length of %d", maxSchemaVersionLength)
+	}
 	return nil
 }
 
@@ -195,12 +198,13 @@ func (s *PersistentSyncerServer) ListenChanges(request *proto.ListenChangesReque
 }
 
 const (
-	defaultLockTTLSeconds = 30
-	maxLockTTLSeconds     = 300
-	maxRequestAge         = 5 * time.Minute
-	maxLockNameLength     = 256
-	maxRecordDataSize     = 65536 // 64 KB
-	maxRecordIDLength     = 64
+	defaultLockTTLSeconds  = 30
+	maxLockTTLSeconds      = 300
+	maxRequestAge          = 5 * time.Minute
+	maxLockNameLength      = 256
+	maxRecordDataSize      = 65536 // 64 KB
+	maxRecordIDLength      = 64
+	maxSchemaVersionLength = 15
 )
 
 func validateLockName(name string) error {
