@@ -85,6 +85,7 @@ func RunWebProxy(grpcServer *grpc.Server, config *config.Config) {
 func CreateServer(config *config.Config, listener net.Listener, syncServer proto.SyncerServer) *grpc.Server {
 	s := grpc.NewServer(
 		grpc.MaxRecvMsgSize(256*1024), // 256 KB
+		grpc.MaxConcurrentStreams(5),  // limit streams per connection
 		grpc.KeepaliveEnforcementPolicy(keepalive.EnforcementPolicy{
 			MinTime:             time.Second * 5,
 			PermitWithoutStream: true,
