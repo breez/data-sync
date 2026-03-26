@@ -54,7 +54,7 @@ func NewSQLiteSyncStorage(file string) (*SQLiteSyncStorage, error) {
 
 func (s *SQLiteSyncStorage) SetRecord(ctx context.Context, userID, id string, data []byte, existingRevision uint64, schemaVersion string) (uint64, error) {
 
-	tx, err := s.db.BeginTx(context.Background(), &sql.TxOptions{
+	tx, err := s.db.BeginTx(ctx, &sql.TxOptions{
 		Isolation: sql.LevelSerializable,
 	})
 	if err != nil {
