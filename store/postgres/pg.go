@@ -53,7 +53,7 @@ func NewPGSyncStorage(databaseURL string) (*PgSyncStorage, error) {
 
 	pgxPool, err := pgxpool.New(context.Background(), databaseURL)
 	if err != nil {
-		return nil, fmt.Errorf("pgxpool.New(%v): %w", databaseURL, err)
+		return nil, fmt.Errorf("pgxpool.New: %w", err)
 	}
 	return &PgSyncStorage{db: pgxPool}, nil
 }
