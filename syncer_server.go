@@ -176,8 +176,8 @@ func (s *PersistentSyncerServer) ListenChanges(request *proto.ListenChangesReque
 	pubkey := context.Value(middleware.USER_PUBKEY_CONTEXT_KEY).(string)
 	apiKey := context.Value(middleware.API_KEY_CONTEXT_KEY).(string)
 	log.Printf("ListenChanges: pubkey: %v, api_key: %v\n", pubkey, apiKey)
-	subscription := s.eventsManager.subscribe(pubkey)
-	defer s.eventsManager.unsubscribe(pubkey, subscription.id)
+	subscription := s.eventsManager.subscribe(pubkey, apiKey)
+	defer s.eventsManager.unsubscribe(pubkey, subscription.id, apiKey)
 
 	if err := stream.Send(&proto.Notification{}); err != nil {
 		return err
@@ -382,7 +382,7 @@ func (c *eventsManager) notifyChange(pubkey string, clientId *string) {
 	c.msgChan <- &notifyChange{pubkey: pubkey, clientId: clientId}
 }
 
-func (c *eventsManager) subscribe(pubkey string) *subscription {
+func (c *eventsManager) subscribe(pubkey string, apiKey string) *subscription {
 	eventsChan := make(chan *proto.Notification, 10)
 	c.Lock()
 	c.globalIDs += 1
@@ -390,11 +390,11 @@ func (c *eventsManager) subscribe(pubkey string) *subscription {
 	c.Unlock()
 
 	c.msgChan <- s
-	log.Printf("New connection for user %s: id - %d\n", pubkey, s.id)
+	log.Printf("New connection for user %s: id - %d, api_key: %v\n", pubkey, s.id, apiKey)
 	return s
 }
 
-func (c *eventsManager) unsubscribe(pubkey string, id int64) {
+func (c *eventsManager) unsubscribe(pubkey string, id int64, apiKey string) {
 	c.msgChan <- &unsubscribe{pubkey: pubkey, id: id}
-	log.Printf("Removing connection for user %s - id %d\n", pubkey, id)
+	log.Printf("Removing connection for user %s - id %d, api_key: %v\n", pubkey, id, apiKey)
 }
