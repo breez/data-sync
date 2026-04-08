@@ -110,7 +110,8 @@ func (s *PersistentSyncerServer) SetRecord(ctx context.Context, msg *proto.SetRe
 		return nil, err
 	}
 	pubkey := c.Value(middleware.USER_PUBKEY_CONTEXT_KEY).(string)
-	log.Printf("SetRecord: pubkey: %v\n", pubkey)
+	apiKey := c.Value(middleware.API_KEY_CONTEXT_KEY).(string)
+	log.Printf("SetRecord: pubkey: %v, api_key: %v\n", pubkey, apiKey)
 	newRevision, err := s.storage.SetRecord(c, pubkey, msg.Record.Id, msg.Record.Data, msg.Record.Revision, msg.Record.SchemaVersion)
 
 	if err != nil {
@@ -142,7 +143,8 @@ func (s *PersistentSyncerServer) ListChanges(ctx context.Context, msg *proto.Lis
 		return nil, err
 	}
 	pubkey := c.Value(middleware.USER_PUBKEY_CONTEXT_KEY).(string)
-	log.Printf("ListChanges: pubkey: %v\n", pubkey)
+	apiKey := c.Value(middleware.API_KEY_CONTEXT_KEY).(string)
+	log.Printf("ListChanges: pubkey: %v, api_key: %v\n", pubkey, apiKey)
 	changed, err := s.storage.ListChanges(c, pubkey, msg.SinceRevision, maxListChangesLimit)
 	if err != nil {
 		return nil, err
@@ -172,6 +174,8 @@ func (s *PersistentSyncerServer) ListenChanges(request *proto.ListenChangesReque
 	}
 
 	pubkey := context.Value(middleware.USER_PUBKEY_CONTEXT_KEY).(string)
+	apiKey := context.Value(middleware.API_KEY_CONTEXT_KEY).(string)
+	log.Printf("ListenChanges: pubkey: %v, api_key: %v\n", pubkey, apiKey)
 	subscription := s.eventsManager.subscribe(pubkey)
 	defer s.eventsManager.unsubscribe(pubkey, subscription.id)
 
@@ -251,7 +255,8 @@ func (s *PersistentSyncerServer) SetLock(ctx context.Context, msg *proto.SetLock
 		return nil, err
 	}
 	pubkey := c.Value(middleware.USER_PUBKEY_CONTEXT_KEY).(string)
-	log.Printf("SetLock: pubkey: %v, lock_name: %v, acquire: %v\n", pubkey, msg.LockName, msg.Acquire)
+	apiKey := c.Value(middleware.API_KEY_CONTEXT_KEY).(string)
+	log.Printf("SetLock: pubkey: %v, api_key: %v, lock_name: %v, acquire: %v\n", pubkey, apiKey, msg.LockName, msg.Acquire)
 
 	ttl := defaultLockTTLSeconds
 	if msg.TtlSeconds != nil {
@@ -286,7 +291,8 @@ func (s *PersistentSyncerServer) GetLock(ctx context.Context, msg *proto.GetLock
 		return nil, err
 	}
 	pubkey := c.Value(middleware.USER_PUBKEY_CONTEXT_KEY).(string)
-	log.Printf("GetLock: pubkey: %v, lock_name: %v\n", pubkey, msg.LockName)
+	apiKey := c.Value(middleware.API_KEY_CONTEXT_KEY).(string)
+	log.Printf("GetLock: pubkey: %v, api_key: %v, lock_name: %v\n", pubkey, apiKey, msg.LockName)
 
 	locked, err := s.storage.HasActiveLock(c, pubkey, msg.LockName)
 	if err != nil {

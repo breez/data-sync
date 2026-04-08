@@ -19,41 +19,42 @@ import (
 )
 
 const (
-	USER_PUBKEY_CONTEXT_KEY = "user_pubkey"
+	USER_PUBKEY_CONTEXT_KEY  = "user_pubkey"
+	API_KEY_CONTEXT_KEY      = "api_key"
 )
 
 var ErrInternalError = fmt.Errorf("internal error")
 var ErrInvalidSignature = fmt.Errorf("invalid signature")
 var SignedMsgPrefix = []byte("realtimesync:")
 
-func checkApiKey(config *config.Config, ctx context.Context, _ interface{}) error {
+func checkApiKey(config *config.Config, ctx context.Context, _ interface{}) (string, error) {
 	if config.CACert == nil || config.CACert.Raw == nil {
-		return nil
+		return "", nil
 	}
 
 	md, ok := metadata.FromIncomingContext(ctx)
 	if !ok {
-		return fmt.Errorf("could not read request metadata")
+		return "", fmt.Errorf("could not read request metadata")
 	}
 
 	authHeaders := md.Get("Authorization")
 	if len(authHeaders) == 0 {
-		return fmt.Errorf("invalid auth header")
+		return "", fmt.Errorf("invalid auth header")
 	}
 	authHeader := authHeaders[0]
 	if len(authHeader) <= 7 || !strings.HasPrefix(authHeader, "Bearer ") {
-		return fmt.Errorf("invalid auth header")
+		return "", fmt.Errorf("invalid auth header")
 	}
 
 	apiKey := authHeader[7:]
 	block, err := base64.StdEncoding.DecodeString(apiKey)
 	if err != nil {
-		return fmt.Errorf("could not decode auth header: %v", err)
+		return "", fmt.Errorf("could not decode auth header: %v", err)
 	}
 
 	cert, err := x509.ParseCertificate(block)
 	if err != nil {
-		return fmt.Errorf("could not parse certificate: %v", err)
+		return "", fmt.Errorf("could not parse certificate: %v", err)
 	}
 
 	rootPool := x509.NewCertPool()
@@ -63,17 +64,18 @@ func checkApiKey(config *config.Config, ctx context.Context, _ interface{}) erro
 		Roots: rootPool,
 	})
 	if err != nil {
-		return fmt.Errorf("certificate verification error: %v", err)
+		return "", fmt.Errorf("certificate verification error: %v", err)
 	}
 	if len(chains) != 1 || len(chains[0]) != 2 || !chains[0][0].Equal(cert) || !chains[0][1].Equal(config.CACert.Raw) {
-		return fmt.Errorf("certificate verification error: invalid chain of trust")
+		return "", fmt.Errorf("certificate verification error: invalid chain of trust")
 	}
 
-	return nil
+	return apiKey, nil
 }
 
 func Authenticate(config *config.Config, ctx context.Context, req interface{}) (context.Context, error) {
-	if err := checkApiKey(config, ctx, req); err != nil {
+	apiKey, err := checkApiKey(config, ctx, req)
+	if err != nil {
 		return nil, err
 	}
 
@@ -116,6 +118,7 @@ func Authenticate(config *config.Config, ctx context.Context, req interface{}) (
 
 	pubkeyBytes := pubkey.SerializeCompressed()
 	newContext := context.WithValue(ctx, USER_PUBKEY_CONTEXT_KEY, hex.EncodeToString(pubkeyBytes))
+	newContext = context.WithValue(newContext, API_KEY_CONTEXT_KEY, apiKey)
 	return newContext, nil
 }
 
