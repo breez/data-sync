@@ -20,7 +20,7 @@ import (
 
 const (
 	USER_PUBKEY_CONTEXT_KEY  = "user_pubkey"
-	API_KEY_CONTEXT_KEY      = "api_key"
+	API_KEY_HASH_CONTEXT_KEY = "api_key_hash"
 )
 
 var ErrInternalError = fmt.Errorf("internal error")
@@ -118,7 +118,12 @@ func Authenticate(config *config.Config, ctx context.Context, req interface{}) (
 
 	pubkeyBytes := pubkey.SerializeCompressed()
 	newContext := context.WithValue(ctx, USER_PUBKEY_CONTEXT_KEY, hex.EncodeToString(pubkeyBytes))
-	newContext = context.WithValue(newContext, API_KEY_CONTEXT_KEY, apiKey)
+	apiKeyHash := ""
+	if apiKey != "" {
+		h := sha256.Sum256([]byte(apiKey))
+		apiKeyHash = hex.EncodeToString(h[:])
+	}
+	newContext = context.WithValue(newContext, API_KEY_HASH_CONTEXT_KEY, apiKeyHash)
 	return newContext, nil
 }
 
