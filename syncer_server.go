@@ -110,7 +110,8 @@ func (s *PersistentSyncerServer) SetRecord(ctx context.Context, msg *proto.SetRe
 		return nil, err
 	}
 	pubkey := c.Value(middleware.USER_PUBKEY_CONTEXT_KEY).(string)
-	log.Printf("SetRecord: pubkey: %v\n", pubkey)
+	apiKeyHash := c.Value(middleware.API_KEY_HASH_CONTEXT_KEY).(string)
+	log.Printf("SetRecord: pubkey: %v, api_key_hash: %v\n", pubkey, apiKeyHash)
 	newRevision, err := s.storage.SetRecord(c, pubkey, msg.Record.Id, msg.Record.Data, msg.Record.Revision, msg.Record.SchemaVersion)
 
 	if err != nil {
@@ -142,7 +143,8 @@ func (s *PersistentSyncerServer) ListChanges(ctx context.Context, msg *proto.Lis
 		return nil, err
 	}
 	pubkey := c.Value(middleware.USER_PUBKEY_CONTEXT_KEY).(string)
-	log.Printf("ListChanges: pubkey: %v\n", pubkey)
+	apiKeyHash := c.Value(middleware.API_KEY_HASH_CONTEXT_KEY).(string)
+	log.Printf("ListChanges: pubkey: %v, api_key_hash: %v\n", pubkey, apiKeyHash)
 	changed, err := s.storage.ListChanges(c, pubkey, msg.SinceRevision, maxListChangesLimit)
 	if err != nil {
 		return nil, err
@@ -172,8 +174,10 @@ func (s *PersistentSyncerServer) ListenChanges(request *proto.ListenChangesReque
 	}
 
 	pubkey := context.Value(middleware.USER_PUBKEY_CONTEXT_KEY).(string)
-	subscription := s.eventsManager.subscribe(pubkey)
-	defer s.eventsManager.unsubscribe(pubkey, subscription.id)
+	apiKeyHash := context.Value(middleware.API_KEY_HASH_CONTEXT_KEY).(string)
+	log.Printf("ListenChanges: pubkey: %v, api_key_hash: %v\n", pubkey, apiKeyHash)
+	subscription := s.eventsManager.subscribe(pubkey, apiKeyHash)
+	defer s.eventsManager.unsubscribe(pubkey, subscription.id, apiKeyHash)
 
 	if err := stream.Send(&proto.Notification{}); err != nil {
 		return err
@@ -251,7 +255,8 @@ func (s *PersistentSyncerServer) SetLock(ctx context.Context, msg *proto.SetLock
 		return nil, err
 	}
 	pubkey := c.Value(middleware.USER_PUBKEY_CONTEXT_KEY).(string)
-	log.Printf("SetLock: pubkey: %v, lock_name: %v, acquire: %v\n", pubkey, msg.LockName, msg.Acquire)
+	apiKeyHash := c.Value(middleware.API_KEY_HASH_CONTEXT_KEY).(string)
+	log.Printf("SetLock: pubkey: %v, api_key_hash: %v, lock_name: %v, acquire: %v\n", pubkey, apiKeyHash, msg.LockName, msg.Acquire)
 
 	ttl := defaultLockTTLSeconds
 	if msg.TtlSeconds != nil {
@@ -286,7 +291,8 @@ func (s *PersistentSyncerServer) GetLock(ctx context.Context, msg *proto.GetLock
 		return nil, err
 	}
 	pubkey := c.Value(middleware.USER_PUBKEY_CONTEXT_KEY).(string)
-	log.Printf("GetLock: pubkey: %v, lock_name: %v\n", pubkey, msg.LockName)
+	apiKeyHash := c.Value(middleware.API_KEY_HASH_CONTEXT_KEY).(string)
+	log.Printf("GetLock: pubkey: %v, api_key_hash: %v, lock_name: %v\n", pubkey, apiKeyHash, msg.LockName)
 
 	locked, err := s.storage.HasActiveLock(c, pubkey, msg.LockName)
 	if err != nil {
@@ -376,7 +382,7 @@ func (c *eventsManager) notifyChange(pubkey string, clientId *string) {
 	c.msgChan <- &notifyChange{pubkey: pubkey, clientId: clientId}
 }
 
-func (c *eventsManager) subscribe(pubkey string) *subscription {
+func (c *eventsManager) subscribe(pubkey string, apiKeyHash string) *subscription {
 	eventsChan := make(chan *proto.Notification, 10)
 	c.Lock()
 	c.globalIDs += 1
@@ -384,11 +390,11 @@ func (c *eventsManager) subscribe(pubkey string) *subscription {
 	c.Unlock()
 
 	c.msgChan <- s
-	log.Printf("New connection for user %s: id - %d\n", pubkey, s.id)
+	log.Printf("New connection for user %s: id - %d, api_key_hash: %v\n", pubkey, s.id, apiKeyHash)
 	return s
 }
 
-func (c *eventsManager) unsubscribe(pubkey string, id int64) {
+func (c *eventsManager) unsubscribe(pubkey string, id int64, apiKeyHash string) {
 	c.msgChan <- &unsubscribe{pubkey: pubkey, id: id}
-	log.Printf("Removing connection for user %s - id %d\n", pubkey, id)
+	log.Printf("Removing connection for user %s - id %d, api_key_hash: %v\n", pubkey, id, apiKeyHash)
 }
