@@ -21,6 +21,7 @@ import (
 const (
 	USER_PUBKEY_CONTEXT_KEY  = "user_pubkey"
 	API_KEY_HASH_CONTEXT_KEY = "api_key_hash"
+	USER_AGENT_CONTEXT_KEY   = "user_agent"
 )
 
 var ErrInternalError = fmt.Errorf("internal error")
@@ -124,6 +125,13 @@ func Authenticate(config *config.Config, ctx context.Context, req interface{}) (
 		apiKeyHash = hex.EncodeToString(h[:])
 	}
 	newContext = context.WithValue(newContext, API_KEY_HASH_CONTEXT_KEY, apiKeyHash)
+	userAgent := ""
+	if md, ok := metadata.FromIncomingContext(ctx); ok {
+		if ua := md.Get("user-agent"); len(ua) > 0 {
+			userAgent = ua[0]
+		}
+	}
+	newContext = context.WithValue(newContext, USER_AGENT_CONTEXT_KEY, userAgent)
 	return newContext, nil
 }
 

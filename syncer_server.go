@@ -111,7 +111,8 @@ func (s *PersistentSyncerServer) SetRecord(ctx context.Context, msg *proto.SetRe
 	}
 	pubkey := c.Value(middleware.USER_PUBKEY_CONTEXT_KEY).(string)
 	apiKeyHash := c.Value(middleware.API_KEY_HASH_CONTEXT_KEY).(string)
-	log.Printf("SetRecord: pubkey: %v, api_key_hash: %v\n", pubkey, apiKeyHash)
+	userAgent := c.Value(middleware.USER_AGENT_CONTEXT_KEY).(string)
+	log.Printf("SetRecord: pubkey: %v, api_key_hash: %v, user_agent: %v\n", pubkey, apiKeyHash, userAgent)
 	newRevision, err := s.storage.SetRecord(c, pubkey, msg.Record.Id, msg.Record.Data, msg.Record.Revision, msg.Record.SchemaVersion)
 
 	if err != nil {
@@ -144,7 +145,8 @@ func (s *PersistentSyncerServer) ListChanges(ctx context.Context, msg *proto.Lis
 	}
 	pubkey := c.Value(middleware.USER_PUBKEY_CONTEXT_KEY).(string)
 	apiKeyHash := c.Value(middleware.API_KEY_HASH_CONTEXT_KEY).(string)
-	log.Printf("ListChanges: pubkey: %v, api_key_hash: %v\n", pubkey, apiKeyHash)
+	userAgent := c.Value(middleware.USER_AGENT_CONTEXT_KEY).(string)
+	log.Printf("ListChanges: pubkey: %v, api_key_hash: %v, user_agent: %v\n", pubkey, apiKeyHash, userAgent)
 	changed, err := s.storage.ListChanges(c, pubkey, msg.SinceRevision, maxListChangesLimit)
 	if err != nil {
 		return nil, err
@@ -256,7 +258,8 @@ func (s *PersistentSyncerServer) SetLock(ctx context.Context, msg *proto.SetLock
 	}
 	pubkey := c.Value(middleware.USER_PUBKEY_CONTEXT_KEY).(string)
 	apiKeyHash := c.Value(middleware.API_KEY_HASH_CONTEXT_KEY).(string)
-	log.Printf("SetLock: pubkey: %v, api_key_hash: %v, lock_name: %v, acquire: %v\n", pubkey, apiKeyHash, msg.LockName, msg.Acquire)
+	userAgent := c.Value(middleware.USER_AGENT_CONTEXT_KEY).(string)
+	log.Printf("SetLock: pubkey: %v, api_key_hash: %v, user_agent: %v, lock_name: %v, acquire: %v\n", pubkey, apiKeyHash, userAgent, msg.LockName, msg.Acquire)
 
 	ttl := defaultLockTTLSeconds
 	if msg.TtlSeconds != nil {
@@ -292,7 +295,8 @@ func (s *PersistentSyncerServer) GetLock(ctx context.Context, msg *proto.GetLock
 	}
 	pubkey := c.Value(middleware.USER_PUBKEY_CONTEXT_KEY).(string)
 	apiKeyHash := c.Value(middleware.API_KEY_HASH_CONTEXT_KEY).(string)
-	log.Printf("GetLock: pubkey: %v, api_key_hash: %v, lock_name: %v\n", pubkey, apiKeyHash, msg.LockName)
+	userAgent := c.Value(middleware.USER_AGENT_CONTEXT_KEY).(string)
+	log.Printf("GetLock: pubkey: %v, api_key_hash: %v, user_agent: %v, lock_name: %v\n", pubkey, apiKeyHash, userAgent, msg.LockName)
 
 	locked, err := s.storage.HasActiveLock(c, pubkey, msg.LockName)
 	if err != nil {
