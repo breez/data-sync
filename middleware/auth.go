@@ -127,7 +127,9 @@ func Authenticate(config *config.Config, ctx context.Context, req interface{}) (
 	newContext = context.WithValue(newContext, API_KEY_HASH_CONTEXT_KEY, apiKeyHash)
 	userAgent := ""
 	if md, ok := metadata.FromIncomingContext(ctx); ok {
-		if ua := md.Get("user-agent"); len(ua) > 0 {
+		if xua := md.Get("x-user-agent"); len(xua) > 0 {
+			userAgent = xua[0]
+		} else if ua := md.Get("user-agent"); len(ua) > 0 {
 			userAgent = ua[0]
 		}
 	}
