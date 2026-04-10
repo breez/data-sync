@@ -8,7 +8,7 @@ primary_region = 'lhr'
 
 [build]
 [build.args]
-GO_VERSION = '1.22'
+GO_VERSION = '1.23'
 
 [env]
 PORT = '8080'
@@ -40,8 +40,12 @@ soft_limit = 1500
   [[services.ports]]
     handlers = ["tls", "http"]
     port = 442
-  
+
   [services.concurrency]
   type = "connections"
   hard_limit = 3000
   soft_limit = 1500
+
+[metrics]
+  port = 9091
+  path = "/metrics"

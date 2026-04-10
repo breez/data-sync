@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/breez/data-sync/config"
+	"github.com/breez/data-sync/metrics"
 	"github.com/breez/data-sync/middleware"
 	"github.com/breez/data-sync/proto"
 	"github.com/breez/data-sync/store"
@@ -322,68 +323,112 @@ type subscription struct {
 	eventsChan chan *proto.Notification
 }
 
+type timestampedMsg struct {
+	enqueuedAt time.Time
+	payload    any
+}
+
+// eventsManager fans out change notifications to per-user subscriber channels.
+// The embedded Mutex protects globalIDs only. The streams map is owned
+// exclusively by the goroutine started in start() — all reads and writes
+// happen there while draining msgChan, so no locking is required for it.
 type eventsManager struct {
 	sync.Mutex
 	globalIDs int64
 	streams   map[string][]*subscription
-	msgChan   chan interface{}
+	msgChan   chan timestampedMsg
 }
 
 func newEventsManager() *eventsManager {
 	return &eventsManager{
 		globalIDs: 0,
 		streams:   make(map[string][]*subscription),
-		msgChan:   make(chan interface{}),
+		// Small buffer so producers (subscribe/unsubscribe/notifyChange) don't
+		// block on rendezvous during bursts; the MsgChanDelay histogram still
+		// measures end-to-end wait time from enqueue to dequeue.
+		msgChan: make(chan timestampedMsg, 256),
 	}
 
 }
 
 func (c *eventsManager) start(quitChan chan struct{}) {
 	go func() {
+		statsTicker := time.NewTicker(1 * time.Minute)
+		defer statsTicker.Stop()
 		for {
-			log.Printf("eventsManager select started\n")
 			select {
-			case msg := <-c.msgChan:
+			case tmsg := <-c.msgChan:
+				metrics.MsgChanDelay.Observe(time.Since(tmsg.enqueuedAt).Seconds())
+				msg := tmsg.payload
+
 				if s, ok := msg.(*subscription); ok {
+					wasAbsent := len(c.streams[s.pubkey]) == 0
 					c.streams[s.pubkey] = append(c.streams[s.pubkey], s)
-					log.Printf("eventsManager: new subscription for user %s: id - %d\n", s.pubkey, s.id)
+					metrics.ActiveSubscriptions.Inc()
+					if wasAbsent {
+						metrics.DistinctSubscribedUsers.Inc()
+					}
+					log.Printf("eventsManager: new subscription for user %s: id - %d (user now has %d subscriptions)\n", s.pubkey, s.id, len(c.streams[s.pubkey]))
 				}
 				if s, ok := msg.(*unsubscribe); ok {
-					log.Printf("eventsManager: unsubscribing user %s: id - %d\n", s.pubkey, s.id)
-					var newSubs []*subscription
-					for _, sub := range c.streams[s.pubkey] {
-						if sub.id != s.id {
-							newSubs = append(newSubs, sub)
+					existing := c.streams[s.pubkey]
+					newSubs := make([]*subscription, 0, len(existing))
+					removed := false
+					for _, sub := range existing {
+						if sub.id == s.id && !removed {
+							close(sub.eventsChan)
+							removed = true
 							continue
 						}
-						close(sub.eventsChan)
+						newSubs = append(newSubs, sub)
 					}
-					delete(c.streams, s.pubkey)
+					if !removed {
+						log.Printf("eventsManager: unsubscribe for user %s id %d matched nothing; skipping metric decrement\n", s.pubkey, s.id)
+						continue
+					}
 					if len(newSubs) > 0 {
 						c.streams[s.pubkey] = newSubs
+					} else {
+						delete(c.streams, s.pubkey)
 					}
+					metrics.ActiveSubscriptions.Dec()
+					if len(newSubs) == 0 {
+						metrics.DistinctSubscribedUsers.Dec()
+					}
+					log.Printf("eventsManager: unsubscribed user %s: id - %d (user now has %d subscriptions)\n", s.pubkey, s.id, len(newSubs))
 				}
 				if s, ok := msg.(*notifyChange); ok {
 					log.Printf("eventsManager: notifying change for user %v\n", s.pubkey)
 					for _, sub := range c.streams[s.pubkey] {
 						select {
 						case sub.eventsChan <- &proto.Notification{ClientId: s.clientId}:
+							metrics.NotificationsSent.Inc()
 						default:
+							metrics.NotificationsDropped.Inc()
 							log.Printf("eventsManager: dropping notification for user %v subscription %d: channel full\n", s.pubkey, sub.id)
 						}
 					}
 				}
+			case <-statsTicker.C:
+				totalSubs := 0
+				multiSubUsers := 0
+				for _, subs := range c.streams {
+					totalSubs += len(subs)
+					if len(subs) > 1 {
+						multiSubUsers++
+					}
+				}
+				log.Printf("eventsManager stats: total_subscriptions=%d, distinct_users=%d, users_with_multiple_subs=%d\n", totalSubs, len(c.streams), multiSubUsers)
 			case <-quitChan:
 				log.Printf("eventsManager: quitChan received\n")
 				return
 			}
-			log.Printf("eventsManager select finished. number of subscriptions = %v\n", len(c.streams))
 		}
 	}()
 }
 
 func (c *eventsManager) notifyChange(pubkey string, clientId *string) {
-	c.msgChan <- &notifyChange{pubkey: pubkey, clientId: clientId}
+	c.msgChan <- timestampedMsg{enqueuedAt: time.Now(), payload: &notifyChange{pubkey: pubkey, clientId: clientId}}
 }
 
 func (c *eventsManager) subscribe(pubkey string, apiKeyHash string) *subscription {
@@ -393,12 +438,12 @@ func (c *eventsManager) subscribe(pubkey string, apiKeyHash string) *subscriptio
 	s := &subscription{pubkey: pubkey, eventsChan: eventsChan, id: c.globalIDs}
 	c.Unlock()
 
-	c.msgChan <- s
+	c.msgChan <- timestampedMsg{enqueuedAt: time.Now(), payload: s}
 	log.Printf("New connection for user %s: id - %d, api_key_hash: %v\n", pubkey, s.id, apiKeyHash)
 	return s
 }
 
 func (c *eventsManager) unsubscribe(pubkey string, id int64, apiKeyHash string) {
-	c.msgChan <- &unsubscribe{pubkey: pubkey, id: id}
+	c.msgChan <- timestampedMsg{enqueuedAt: time.Now(), payload: &unsubscribe{pubkey: pubkey, id: id}}
 	log.Printf("Removing connection for user %s - id %d, api_key_hash: %v\n", pubkey, id, apiKeyHash)
 }

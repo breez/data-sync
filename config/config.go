@@ -31,6 +31,7 @@ func (c *Certificate) UnmarshalEnvironmentValue(data string) error {
 type Config struct {
 	GrpcListenAddress    string       `env:"GRPC_LISTEN_ADDRESS,default=0.0.0.0:8080"`
 	GrpcWebListenAddress string       `env:"GRPC_WEB_LISTEN_ADDRESS,default=0.0.0.0:8081"`
+	MetricsListenAddress string       `env:"METRICS_LISTEN_ADDRESS,default=0.0.0.0:9091"`
 	SQLiteDirPath        string       `env:"SQLITE_DIR_PATH,default=db"`
 	PgDatabaseUrl        string       `env:"DATABASE_URL"`
 	CACert               *Certificate `env:"CA_CERT"`
