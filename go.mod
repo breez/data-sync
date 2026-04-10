@@ -2,8 +2,6 @@ module github.com/breez/data-sync
 
 go 1.23.0
 
-toolchain go1.24.5
-
 require (
 	github.com/Netflix/go-env v0.0.0-20220526054621-78278af1949d
 	github.com/btcsuite/btcd/btcec/v2 v2.3.3

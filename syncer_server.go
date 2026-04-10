@@ -328,6 +328,10 @@ type timestampedMsg struct {
 	payload    any
 }
 
+// eventsManager fans out change notifications to per-user subscriber channels.
+// The embedded Mutex protects globalIDs only. The streams map is owned
+// exclusively by the goroutine started in start() — all reads and writes
+// happen there while draining msgChan, so no locking is required for it.
 type eventsManager struct {
 	sync.Mutex
 	globalIDs int64
@@ -339,7 +343,10 @@ func newEventsManager() *eventsManager {
 	return &eventsManager{
 		globalIDs: 0,
 		streams:   make(map[string][]*subscription),
-		msgChan:   make(chan timestampedMsg),
+		// Small buffer so producers (subscribe/unsubscribe/notifyChange) don't
+		// block on rendezvous during bursts; the MsgChanDelay histogram still
+		// measures end-to-end wait time from enqueue to dequeue.
+		msgChan: make(chan timestampedMsg, 256),
 	}
 
 }
@@ -364,17 +371,25 @@ func (c *eventsManager) start(quitChan chan struct{}) {
 					log.Printf("eventsManager: new subscription for user %s: id - %d (user now has %d subscriptions)\n", s.pubkey, s.id, len(c.streams[s.pubkey]))
 				}
 				if s, ok := msg.(*unsubscribe); ok {
-					var newSubs []*subscription
-					for _, sub := range c.streams[s.pubkey] {
-						if sub.id != s.id {
-							newSubs = append(newSubs, sub)
+					existing := c.streams[s.pubkey]
+					newSubs := make([]*subscription, 0, len(existing))
+					removed := false
+					for _, sub := range existing {
+						if sub.id == s.id && !removed {
+							close(sub.eventsChan)
+							removed = true
 							continue
 						}
-						close(sub.eventsChan)
+						newSubs = append(newSubs, sub)
 					}
-					delete(c.streams, s.pubkey)
+					if !removed {
+						log.Printf("eventsManager: unsubscribe for user %s id %d matched nothing; skipping metric decrement\n", s.pubkey, s.id)
+						continue
+					}
 					if len(newSubs) > 0 {
 						c.streams[s.pubkey] = newSubs
+					} else {
+						delete(c.streams, s.pubkey)
 					}
 					metrics.ActiveSubscriptions.Dec()
 					if len(newSubs) == 0 {
