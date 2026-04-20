@@ -3,8 +3,11 @@ package main
 import (
 	"context"
 	"fmt"
+	"io"
 	"log"
+	"net/http"
 	"os"
+	"strings"
 	"sync"
 	"time"
 
@@ -23,8 +26,29 @@ type PersistentSyncerServer struct {
 	proto.UnimplementedSyncerServer
 	sync.Mutex
 	config        *config.Config
+	CRL           map[string]struct{}
 	eventsManager *eventsManager
 	storage       store.SyncStorage
+}
+
+func fetchCRL(url string) (map[string]struct{}, error) {
+	resp, err := http.Get(url)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+
+	entries := make(map[string]struct{})
+	for entry := range strings.SplitSeq(string(body), ",") {
+		entries[entry] = struct{}{}
+	}
+
+	return entries, nil
 }
 
 func NewPersistentSyncerServer(config *config.Config) (*PersistentSyncerServer, error) {
@@ -58,6 +82,17 @@ func NewPersistentSyncerServer(config *config.Config) (*PersistentSyncerServer, 
 }
 
 func (s *PersistentSyncerServer) Start(quitChan chan struct{}) {
+
+	if s.config.CRLUrl != "" {
+		var err error
+		entries, err := fetchCRL(s.config.CRLUrl)
+		if err == nil {
+			s.CRL = entries
+		} else {
+			log.Printf("failed to fetch CRL from %s: %v\n", s.config.CRLUrl, err)
+		}
+	}
+
 	log.Println("Deleting expired locks on startup")
 	if err := s.storage.DeleteExpiredLocks(context.Background()); err != nil {
 		log.Printf("Failed to delete expired locks on startup: %v\n", err)
@@ -104,7 +139,7 @@ func (s *PersistentSyncerServer) SetRecord(ctx context.Context, msg *proto.SetRe
 	if err := validateRequestTime(msg.RequestTime); err != nil {
 		return nil, err
 	}
-	c, err := middleware.Authenticate(s.config, ctx, msg)
+	c, err := middleware.Authenticate(s.config, s.CRL, ctx, msg)
 	if err != nil {
 		log.Printf("SetRecord completed with auth error: %v\n", err)
 		return nil, err
@@ -138,7 +173,7 @@ func (s *PersistentSyncerServer) ListChanges(ctx context.Context, msg *proto.Lis
 	if err := validateRequestTime(msg.RequestTime); err != nil {
 		return nil, err
 	}
-	c, err := middleware.Authenticate(s.config, ctx, msg)
+	c, err := middleware.Authenticate(s.config, s.CRL, ctx, msg)
 	if err != nil {
 		log.Printf("ListChanges completed with auth error: %v\n", err)
 		return nil, err
@@ -170,7 +205,7 @@ func (s *PersistentSyncerServer) ListenChanges(request *proto.ListenChangesReque
 	if err := validateRequestTime(request.RequestTime); err != nil {
 		return err
 	}
-	context, err := middleware.Authenticate(s.config, stream.Context(), request)
+	context, err := middleware.Authenticate(s.config, s.CRL, stream.Context(), request)
 	if err != nil {
 		return err
 	}
@@ -251,7 +286,7 @@ func (s *PersistentSyncerServer) SetLock(ctx context.Context, msg *proto.SetLock
 	if err := validateRequestTime(msg.RequestTime); err != nil {
 		return nil, err
 	}
-	c, err := middleware.Authenticate(s.config, ctx, msg)
+	c, err := middleware.Authenticate(s.config, s.CRL, ctx, msg)
 	if err != nil {
 		log.Printf("SetLock completed with auth error: %v\n", err)
 		return nil, err
@@ -288,7 +323,7 @@ func (s *PersistentSyncerServer) GetLock(ctx context.Context, msg *proto.GetLock
 	if err := validateRequestTime(msg.RequestTime); err != nil {
 		return nil, err
 	}
-	c, err := middleware.Authenticate(s.config, ctx, msg)
+	c, err := middleware.Authenticate(s.config, s.CRL, ctx, msg)
 	if err != nil {
 		log.Printf("GetLock completed with auth error: %v\n", err)
 		return nil, err

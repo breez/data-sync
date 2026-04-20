@@ -28,7 +28,7 @@ var ErrInternalError = fmt.Errorf("internal error")
 var ErrInvalidSignature = fmt.Errorf("invalid signature")
 var SignedMsgPrefix = []byte("realtimesync:")
 
-func checkApiKey(config *config.Config, ctx context.Context, _ interface{}) (string, error) {
+func checkApiKey(config *config.Config, crl map[string]struct{}, ctx context.Context, _ interface{}) (string, error) {
 	if config.CACert == nil || config.CACert.Raw == nil {
 		return "", nil
 	}
@@ -71,11 +71,15 @@ func checkApiKey(config *config.Config, ctx context.Context, _ interface{}) (str
 		return "", fmt.Errorf("certificate verification error: invalid chain of trust")
 	}
 
+	if _, ok := crl[cert.SerialNumber.String()]; ok {
+		return "", fmt.Errorf("certificate verification error")
+	}
+
 	return apiKey, nil
 }
 
-func Authenticate(config *config.Config, ctx context.Context, req interface{}) (context.Context, error) {
-	apiKey, err := checkApiKey(config, ctx, req)
+func Authenticate(config *config.Config, crl map[string]struct{}, ctx context.Context, req interface{}) (context.Context, error) {
+	apiKey, err := checkApiKey(config, crl, ctx, req)
 	if err != nil {
 		return nil, err
 	}

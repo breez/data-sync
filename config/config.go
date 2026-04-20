@@ -34,6 +34,7 @@ type Config struct {
 	SQLiteDirPath        string       `env:"SQLITE_DIR_PATH,default=db"`
 	PgDatabaseUrl        string       `env:"DATABASE_URL"`
 	CACert               *Certificate `env:"CA_CERT"`
+	CRLUrl               string       `env:"CRL_URL"`
 }
 
 func NewConfig() (*Config, error) {
@@ -41,6 +42,5 @@ func NewConfig() (*Config, error) {
 	if _, err := env.UnmarshalFromEnviron(&config); err != nil {
 		return nil, err
 	}
-
 	return &config, nil
 }
