@@ -32,7 +32,9 @@ type Config struct {
 	GrpcListenAddress    string       `env:"GRPC_LISTEN_ADDRESS,default=0.0.0.0:8080"`
 	GrpcWebListenAddress string       `env:"GRPC_WEB_LISTEN_ADDRESS,default=0.0.0.0:8081"`
 	SQLiteDirPath        string       `env:"SQLITE_DIR_PATH,default=db"`
-	PgDatabaseUrl        string       `env:"DATABASE_URL"`
+	PgRuntimeUrl         string       `env:"DATABASE_RUNTIME_URL"`
+	PgMigrationUrl       string       `env:"DATABASE_MIGRATION_URL"`
+	PgMaxConns           int32        `env:"DATABASE_MAX_CONNS"`
 	CACert               *Certificate `env:"CA_CERT"`
 	CRLUrl               string       `env:"CRL_URL"`
 }

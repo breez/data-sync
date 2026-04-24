@@ -25,12 +25,17 @@ type PgSyncStorage struct {
 	db *pgxpool.Pool
 }
 
-func NewPGSyncStorage(databaseURL string) (*PgSyncStorage, error) {
+func NewPGSyncStorage(databaseURL, migrationURL string, maxConns int32) (*PgSyncStorage, error) {
 
-	db, err := sql.Open("pgx", databaseURL)
+	// migrationURL is expected to be a session-mode (or direct) URL, since
+	// golang-migrate uses pg_advisory_lock() which does not hold across a
+	// transaction-mode pooler. Callers fall back to databaseURL when no
+	// dedicated migration URL is configured.
+	db, err := sql.Open("pgx", migrationURL)
 	if err != nil {
-		return nil, fmt.Errorf("failed to open sqlite3 database %w", err)
+		return nil, fmt.Errorf("failed to open postgres database for migrations: %w", err)
 	}
+	defer db.Close()
 	driver, err := pgxmigrate.WithInstance(db, &pgxmigrate.Config{})
 	if err != nil {
 		return nil, fmt.Errorf("failed to create migration driver %w", err)
@@ -51,9 +56,24 @@ func NewPGSyncStorage(databaseURL string) (*PgSyncStorage, error) {
 		return nil, fmt.Errorf("failed to run migrations %w", err)
 	}
 
-	pgxPool, err := pgxpool.New(context.Background(), databaseURL)
+	poolConfig, err := pgxpool.ParseConfig(databaseURL)
 	if err != nil {
-		return nil, fmt.Errorf("pgxpool.New: %w", err)
+		return nil, fmt.Errorf("pgxpool.ParseConfig: %w", err)
+	}
+	// The pgx default (max(4, NumCPU)) is too small for this service in production,
+	// but we don't impose our own default here so local / dev runs keep pgx's behaviour.
+	// Set DATABASE_MAX_CONNS in the environment that needs it.
+	if maxConns > 0 {
+		poolConfig.MaxConns = maxConns
+	}
+	// We run behind Supavisor in transaction mode (port 6543) in production, where
+	// server-side prepared statements break because each tx can land on a different
+	// backend. cache_describe + no statement cache is safe in both modes.
+	poolConfig.ConnConfig.DefaultQueryExecMode = pgx.QueryExecModeCacheDescribe
+	poolConfig.ConnConfig.StatementCacheCapacity = 0
+	pgxPool, err := pgxpool.NewWithConfig(context.Background(), poolConfig)
+	if err != nil {
+		return nil, fmt.Errorf("pgxpool.NewWithConfig: %w", err)
 	}
 	return &PgSyncStorage{db: pgxPool}, nil
 }
