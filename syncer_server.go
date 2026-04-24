@@ -63,6 +63,9 @@ func NewPersistentSyncerServer(config *config.Config) (*PersistentSyncerServer, 
 		// pooler (e.g. Supavisor :6543), since golang-migrate needs a session.
 		migrationURL := config.PgMigrationUrl
 		if migrationURL == "" {
+			log.Println("DATABASE_MIGRATION_URL not set; running migrations over DATABASE_RUNTIME_URL. " +
+				"If the runtime URL points at a transaction-mode pooler, migrations might fail — " +
+				"set DATABASE_MIGRATION_URL to a session-mode or direct URL.")
 			migrationURL = config.PgRuntimeUrl
 		}
 		storage, err = postgres.NewPGSyncStorage(config.PgRuntimeUrl, migrationURL, config.PgMaxConns)
